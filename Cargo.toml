@@ -1,0 +1,11 @@
+[package]
+name = "xpath_reader"
+version = "0.1.0"
+authors = ["Leo Schwarz <mail@leoschwarz.com>"]
+license = "Apache-2.0"
+
+[dependencies]
+error-chain = "0.10.0"
+sxd-document = "0.2.1"
+sxd-xpath = "0.4.0"
+
