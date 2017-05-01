@@ -15,6 +15,15 @@ error_chain! {
         XpathExecuteError(::sxd_xpath::ExecutionError);
         XpathParseError(::sxd_xpath::ParserError);
     }
+
+    errors {
+        /// XPath expression failed to evaluate to a value.
+        /// The String variant contains a copy of the XPath expression.
+        NodeNotFound(xpath: String) {
+            description("XPath failed to find a node")
+            display("XPath expression '{}' failed to find a node", xpath)
+        }
+    }
 }
 
 // TODO: Take this upstream, either the tuple should implement std::Error or another type should be

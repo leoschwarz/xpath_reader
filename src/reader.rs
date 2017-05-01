@@ -1,10 +1,12 @@
+//! Main XPath reader code.
+
 use sxd_document::Package;
 use sxd_document::parser::parse as sxd_parse;
 use sxd_xpath::{Value, Factory, XPath};
 use sxd_xpath::nodeset::Node;
 use sxd_xpath::Value::Nodeset;
 
-use super::XpathError;
+use super::{XpathError, XpathErrorKind};
 use super::context::Context;
 
 /// A trait to abstract the idea of something that can be parsed from XML.
@@ -33,12 +35,20 @@ pub trait FromXmlContained: FromXml {}
 /// `FromXml` takes a reader as input whose root element **is** the relevant element.
 pub trait FromXmlElement: FromXml {}
 
+/// Allows to execute XPath expressions on some kind of document.
+///
+/// Different implementors have different root nodes.
 pub trait XpathReader<'d> {
     /// Evaluate an Xpath expression on the root of this reader.
+    ///
+    /// Normally you won't have to use this method at all and use `read`, `read_option` or
+    /// `read_vec` instead.
     fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, XpathError>;
 
+    /// Returns a reference to the `Context` used by the reader instance.
     fn context(&'d self) -> &'d Context<'d>;
 
+    /// Read the result of the xpath expression into a value of type `V`.
     fn read<V>(&'d self, xpath_expr: &str) -> Result<V, XpathError>
         where V: FromXml
     {
@@ -46,11 +56,15 @@ pub trait XpathReader<'d> {
         V::from_xml(&reader)
     }
 
+    /// Read the result of the xpath expression into a value of type `Option<V>`.
     fn read_option<V>(&'d self, xpath_expr: &str) -> Result<Option<V>, XpathError>
         where V: OptionFromXml
     {
-        let reader = self.relative(xpath_expr)?;
-        V::option_from_xml(&reader)
+        match self.relative(xpath_expr) {
+            Ok(reader) => V::option_from_xml(&reader),
+            Err(XpathError(XpathErrorKind::NodeNotFound(_), _)) => Ok(None),
+            Err(e) => Err(e)
+        }
     }
 
     /// Execute an Xpath expression and parse the result into a vector of `Item` instances.
@@ -77,9 +91,7 @@ pub trait XpathReader<'d> {
             Value::Nodeset(nodeset) => {
                 let res: Result<Node<'d>, XpathError> = nodeset.document_order_first()
                     .ok_or_else(|| {
-                        format!("Failed to find a node with the specified XPath: '{}'",
-                                xpath_expr)
-                            .into()
+                        XpathErrorKind::NodeNotFound(xpath_expr.to_string()).into()
                     });
                 res?
             }
@@ -215,8 +227,18 @@ from_parse_str!(u8, u16, u32, u64, i8, i16, i32, i64, bool);
 mod tests {
     use super::*;
 
-    const XML_STRING: &str = r#"<?xml version="1.0"?><root><title>Hello World</title><empty/></root>"#;
-    const XML_NUMBERS: &str = r#"<?xml version="1.0"?><root><float>-23.85</float><int>42</int></root>"#;
+    #[test]
+    fn xpath_str_reader() {
+        let context = Context::new();
+        let xml =
+            r#"<?xml version="1.0" encoding="UTF-8"?><root><child name="Hello World"/></root>"#;
+        let reader = XpathStrReader::new(xml, &context).unwrap();
+        assert_eq!(reader.evaluate(".//child/@name").unwrap().string(),
+                   "Hello World".to_string());
+    }
+
+    const XML_STRING: &str =
+        r#"<?xml version="1.0"?><root><title>Hello World</title><empty/></root>"#;
 
     #[test]
     fn string_option_from_xml() {
@@ -246,8 +268,9 @@ mod tests {
 
     #[test]
     fn num_from_xml() {
+        let xml = r#"<?xml version="1.0"?><root><float>-23.85</float><int>42</int></root>"#;
         let context = Context::new();
-        let reader = XpathStrReader::new(XML_NUMBERS, &context).unwrap();
+        let reader = XpathStrReader::new(xml, &context).unwrap();
 
         let float = reader.relative("//float").unwrap();
         let int = reader.relative("//int").unwrap();
@@ -281,4 +304,3 @@ mod tests {
         assert_eq!(bool::from_xml(&f).unwrap(), false);
     }
 }
-

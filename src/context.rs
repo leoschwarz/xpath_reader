@@ -4,4 +4,3 @@
 
 // TODO: Consider a newtype.
 pub use sxd_xpath::Context;
-
