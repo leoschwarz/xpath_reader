@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Provides a convenient wrapper around [sxd_xpath](https://github.com/shepmaster/sxd-xpath).
+//! Provides a convenient API to read from XML using XPath queries.
+//!
+//! This crate is mostly a wrapper around the crate [sxd_xpath](https://github.com/shepmaster/sxd-xpath).
 //!
 //! # Examples
 //! ```
