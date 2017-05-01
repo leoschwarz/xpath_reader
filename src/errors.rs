@@ -1,10 +1,10 @@
-/// ! Errors used in this crate.
-/// ! We are using `error-chain` so if you are using it too you can just add a link for this crate's
-/// ! errors.
+//! Errors used in this crate.
+//! We are using `error-chain` so if you are using it too you can just add a link for this crate's
+//! errors.
 
 error_chain! {
     types {
-        XpathError, XpathErrorKind, ChainXpathErr;
+        XpathError, XpathErrorKind, ChainXpathErr, XpathResult;
     }
 
     foreign_links {
