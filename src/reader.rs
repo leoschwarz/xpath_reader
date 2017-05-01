@@ -211,3 +211,74 @@ macro_rules! from_parse_str {
 
 from_parse_str!(u8, u16, u32, u64, i8, i16, i32, i64, bool);
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const XML_STRING: &str = r#"<?xml version="1.0"?><root><title>Hello World</title><empty/></root>"#;
+    const XML_NUMBERS: &str = r#"<?xml version="1.0"?><root><float>-23.85</float><int>42</int></root>"#;
+
+    #[test]
+    fn string_option_from_xml() {
+        let context = Context::new();
+        let reader = XpathStrReader::new(XML_STRING, &context).unwrap();
+
+        let title = reader.relative("//title").unwrap();
+        assert_eq!(String::option_from_xml(&title).unwrap(),
+                   Some("Hello World".to_string()));
+
+        let empty = reader.relative("//empty").unwrap();
+        assert_eq!(String::option_from_xml(&empty).unwrap(), None);
+
+    }
+
+    #[test]
+    fn string_from_xml() {
+        let context = Context::new();
+        let reader = XpathStrReader::new(XML_STRING, &context).unwrap();
+
+        let title = reader.relative("//title").unwrap();
+        assert_eq!(String::from_xml(&title).unwrap(), "Hello World".to_string());
+
+        let empty = reader.relative("//empty").unwrap();
+        assert_eq!(String::from_xml(&empty).unwrap(), "".to_string());
+    }
+
+    #[test]
+    fn num_from_xml() {
+        let context = Context::new();
+        let reader = XpathStrReader::new(XML_NUMBERS, &context).unwrap();
+
+        let float = reader.relative("//float").unwrap();
+        let int = reader.relative("//int").unwrap();
+
+        assert_eq!(f32::from_xml(&float).unwrap(), -23.85f32);
+        assert_eq!(f32::from_xml(&int).unwrap(), 42f32);
+        assert_eq!(f64::from_xml(&float).unwrap(), -23.85f64);
+        assert_eq!(f64::from_xml(&int).unwrap(), 42f64);
+
+        assert_eq!(u8::from_xml(&int).unwrap(), 42u8);
+        assert_eq!(u16::from_xml(&int).unwrap(), 42u16);
+        assert_eq!(u32::from_xml(&int).unwrap(), 42u32);
+        assert_eq!(u64::from_xml(&int).unwrap(), 42u64);
+
+        assert_eq!(i8::from_xml(&int).unwrap(), 42i8);
+        assert_eq!(i16::from_xml(&int).unwrap(), 42i16);
+        assert_eq!(i32::from_xml(&int).unwrap(), 42i32);
+        assert_eq!(i64::from_xml(&int).unwrap(), 42i64);
+    }
+
+    #[test]
+    fn bool_from_xml() {
+        let xml = r#"<?xml version="1.0"?><root><t>true</t><f>false</f></root>"#;
+        let context = Context::new();
+        let reader = XpathStrReader::new(xml, &context).unwrap();
+
+        let t = reader.relative("//t").unwrap();
+        let f = reader.relative("//f").unwrap();
+
+        assert_eq!(bool::from_xml(&t).unwrap(), true);
+        assert_eq!(bool::from_xml(&f).unwrap(), false);
+    }
+}
+
