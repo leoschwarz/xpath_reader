@@ -2,14 +2,14 @@
 //! We are using `error-chain` so if you are using it too you can just add a link for this crate's
 //! errors.
 
+use std::error::Error;
+
 error_chain! {
     types {
         XpathError, XpathErrorKind, ChainXpathErr, XpathResult;
     }
 
     foreign_links {
-        ParseBoolError(::std::str::ParseBoolError);
-        ParseIntError(::std::num::ParseIntError);
         XmlParseError(::sxd_document::parser::Error);
         XpathError(::sxd_xpath::Error);
         XpathExecuteError(::sxd_xpath::ExecutionError);
@@ -20,11 +20,34 @@ error_chain! {
         /// XPath expression failed to evaluate to a value.
         /// The String variant contains a copy of the XPath expression.
         NodeNotFound(xpath: String) {
-            description("XPath failed to find a node")
-            display("XPath expression '{}' failed to find a node", xpath)
+            description("XPath expression didn't yield a node.")
+            display("XPath expression '{}' failed to find a node.", xpath)
+        }
+
+        /// Conversion from xml failed, used for failures in `FromXml` and `OptionFromXml` traits.
+        FromXmlError(err: Box<Error + Send>) {
+            description("Conversion from XML failed.")
+            display("Conversion from XML failed: {:?}", err)
         }
     }
 }
+
+macro_rules! from_xml_error {
+    ( $( $type:ty );* ; ) => {
+        $(
+            impl From<$type> for XpathError {
+                fn from(err: $type) -> XpathError {
+                    XpathErrorKind::FromXmlError(Box::new(err)).into()
+                }
+            }
+        )*
+    }
+}
+
+from_xml_error!(
+    ::std::str::ParseBoolError;
+    ::std::num::ParseIntError;
+);
 
 // TODO: Take this upstream, either the tuple should implement std::Error or another type should be
 // used which does.

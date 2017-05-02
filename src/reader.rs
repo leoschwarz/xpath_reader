@@ -25,6 +25,15 @@ pub trait FromXml
 pub trait OptionFromXml
     where Self: Sized
 {
+    /// Read an instance of `Option<Self>` from the provided `reader`.
+    ///
+    /// Depending on the individual implementor an empty value might not be differentiable from
+    /// absence of a value. The only contract is that an absence of a specified value **should
+    /// not** yield an Error but instead return a None variant.
+    ///
+    /// The reader can be relative to a specific element. Whether the root of the document contains
+    /// the element to be parsed or is the element to be parsed can be specified by the additional
+    /// traits `FromXmlContained` and `FromXmlElement`.
     fn option_from_xml<'d, R>(reader: &'d R) -> Result<Option<Self>, XpathError>
         where R: XpathReader<'d>;
 }
