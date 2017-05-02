@@ -72,7 +72,7 @@ pub trait XpathReader<'d> {
         match self.relative(xpath_expr) {
             Ok(reader) => V::option_from_xml(&reader),
             Err(XpathError(XpathErrorKind::NodeNotFound(_), _)) => Ok(None),
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
@@ -99,9 +99,7 @@ pub trait XpathReader<'d> {
         let node: Node<'d> = match self.evaluate(xpath_expr)? {
             Value::Nodeset(nodeset) => {
                 let res: Result<Node<'d>, XpathError> = nodeset.document_order_first()
-                    .ok_or_else(|| {
-                        XpathErrorKind::NodeNotFound(xpath_expr.to_string()).into()
-                    });
+                    .ok_or_else(|| XpathErrorKind::NodeNotFound(xpath_expr.to_string()).into());
                 res?
             }
             _ => return Err(format!("XPath didn't specify a nodeset: '{}'", xpath_expr).into()),
