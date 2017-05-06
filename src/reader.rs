@@ -98,8 +98,10 @@ pub trait XpathReader<'d> {
     fn relative(&'d self, xpath_expr: &str) -> Result<XpathNodeReader<'d>, XpathError> {
         let node: Node<'d> = match self.evaluate(xpath_expr)? {
             Value::Nodeset(nodeset) => {
-                let res: Result<Node<'d>, XpathError> = nodeset.document_order_first()
-                    .ok_or_else(|| XpathErrorKind::NodeNotFound(xpath_expr.to_string()).into());
+                let res: Result<Node<'d>, XpathError> =
+                    nodeset
+                        .document_order_first()
+                        .ok_or_else(|| XpathErrorKind::NodeNotFound(xpath_expr.to_string()).into());
                 res?
             }
             _ => return Err(format!("XPath didn't specify a nodeset: '{}'", xpath_expr).into()),
@@ -118,22 +120,25 @@ pub struct XpathStrReader<'d> {
 impl<'d> XpathStrReader<'d> {
     pub fn new(xml: &str, context: &'d Context<'d>) -> Result<Self, XpathError> {
         Ok(Self {
-            context: context,
-            factory: Factory::default(),
-            package: sxd_parse(xml)?,
-        })
+               context: context,
+               factory: Factory::default(),
+               package: sxd_parse(xml)?,
+           })
     }
 }
 
 fn build_xpath(factory: &Factory, xpath_expr: &str) -> Result<XPath, XpathError> {
-    factory.build(xpath_expr)?
+    factory
+        .build(xpath_expr)?
         .ok_or_else(|| "Xpath instance was `None`!".into())
 }
 
 impl<'d> XpathReader<'d> for XpathStrReader<'d> {
     fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, XpathError> {
         let xpath = build_xpath(&self.factory, xpath_expr)?;
-        xpath.evaluate(&self.context, self.package.as_document().root()).map_err(XpathError::from)
+        xpath
+            .evaluate(&self.context, self.package.as_document().root())
+            .map_err(XpathError::from)
     }
 
     fn context(&'d self) -> &'d Context<'d> {
@@ -153,17 +158,19 @@ impl<'d> XpathNodeReader<'d> {
         where N: Into<Node<'d>>
     {
         Ok(Self {
-            node: node.into(),
-            factory: Factory::default(),
-            context: context,
-        })
+               node: node.into(),
+               factory: Factory::default(),
+               context: context,
+           })
     }
 }
 
 impl<'d> XpathReader<'d> for XpathNodeReader<'d> {
     fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, XpathError> {
         let xpath = build_xpath(&self.factory, xpath_expr)?;
-        xpath.evaluate(self.context, self.node).map_err(XpathError::from)
+        xpath
+            .evaluate(self.context, self.node)
+            .map_err(XpathError::from)
     }
 
     fn context(&'d self) -> &'d Context<'d> {
