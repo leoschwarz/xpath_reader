@@ -65,7 +65,7 @@ pub trait XpathReader<'d> {
         V::from_xml(&reader)
     }
 
-    /// Read the result of the xpath expression into a value of type `Option<V>`.
+    /// Read the result of the XPath expression into a value of type `Option<V>`.
     fn read_option<V>(&'d self, xpath_expr: &str) -> Result<Option<V>, XpathError>
         where V: OptionFromXml
     {
@@ -76,7 +76,9 @@ pub trait XpathReader<'d> {
         }
     }
 
-    /// Execute an Xpath expression and parse the result into a vector of `Item` instances.
+    /// Execute an XPath expression and parse the result into a vector of `Item` instances.
+    ///
+    /// An absence of any values will return `Ok` with an empty `Vec` inside.
     fn read_vec<Item>(&'d self, xpath_expr: &str) -> Result<Vec<Item>, XpathError>
         where Item: FromXml
     {
@@ -93,8 +95,27 @@ pub trait XpathReader<'d> {
         }
     }
 
-    /// Evaluates an Xpath query, takes the first returned node (in document order) and creates
-    /// a new XpathNodeReader with that node.
+    /// Execute an XPath expression and parse it into a vector of `Option<Item>` instances.
+    ///
+    /// An absence of any values will return `Ok` with an empty `Vec` inside.
+    fn read_vec_options<Item>(&'d self, xpath_expr: &str) -> Result<Vec<Option<Item>>, XpathError>
+        where Item: OptionFromXml
+    {
+        match self.evaluate(xpath_expr)? {
+            Nodeset(nodeset) => {
+                nodeset.document_order()
+                    .iter()
+                    .map(|node| {
+                        XpathNodeReader::new(*node, self.context()).and_then(|r| Item::option_from_xml(&r))
+                    })
+                    .collect()
+            }
+            _ => Ok(Vec::new()),
+        }
+    }
+
+    /// Evaluates an XPath query, takes the first returned node (in document order) and creates
+    /// a new `XpathNodeReader` with that node at its root.
     fn relative(&'d self, xpath_expr: &str) -> Result<XpathNodeReader<'d>, XpathError> {
         let node: Node<'d> = match self.evaluate(xpath_expr)? {
             Value::Nodeset(nodeset) => {
@@ -316,5 +337,51 @@ mod tests {
 
         assert_eq!(bool::from_xml(&t).unwrap(), true);
         assert_eq!(bool::from_xml(&f).unwrap(), false);
+    }
+
+    #[test]
+    fn vec_existent() {
+        let xml = r#"<?xml version="1.0"?><book><tags><tag name="cyberpunk"/><tag name="sci-fi"/></tags></book>"#;
+        let context = Context::new();
+        let reader = XpathStrReader::new(xml, &context).unwrap();
+
+        let tags = reader
+            .read_vec::<String>("//book/tags/tag/@name")
+            .unwrap();
+        assert_eq!(tags, vec!["cyberpunk".to_string(), "sci-fi".to_string()]);
+    }
+
+    #[test]
+    fn vec_non_existent() {
+        let xml = r#"<?xml version="1.0"?><root><t>true</t><f>false</f></root>"#;
+        let context = Context::new();
+        let reader = XpathStrReader::new(xml, &context).unwrap();
+
+        let tags = reader
+            .read_vec::<String>("//book/tags/tag/@name")
+            .unwrap();
+        assert_eq!(tags, Vec::<String>::new());
+    }
+
+    #[test]
+    fn vec_options() {
+        let xml = r#"<?xml version="1.0"?><book><tags><tag name="cyberpunk"/><tag name=""/><tag name="sci-fi"/></tags></book>"#;
+        let context = Context::new();
+        let reader = XpathStrReader::new(xml, &context).unwrap();
+
+        // Read empty values as None:
+        let tags = reader
+            .read_vec_options::<String>("//book/tags/tag/@name")
+            .unwrap();
+        assert_eq!(tags,
+                   vec![Some("cyberpunk".to_string()),
+                        None,
+                        Some("sci-fi".to_string())]);
+
+        // Don't fail on absence of any value at all, but return an empty vec:
+        let tags = reader
+            .read_vec_options::<String>("//book/lala/tag/@name")
+            .unwrap();
+        assert_eq!(tags, Vec::<Option<String>>::new());
     }
 }
