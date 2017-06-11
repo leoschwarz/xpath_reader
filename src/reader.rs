@@ -6,8 +6,8 @@ use sxd_xpath::{Value, Factory, XPath};
 use sxd_xpath::nodeset::Node;
 use sxd_xpath::Value::Nodeset;
 
-use super::{XpathError, XpathErrorKind};
-use super::context::Context;
+use {XpathError, XpathErrorKind};
+use context::Context;
 use errors::FromXmlError;
 
 fn extract_option<T: FromXml>(s: Result<T, FromXmlError>) -> Result<Option<T>, XpathError> {
