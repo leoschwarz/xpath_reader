@@ -3,6 +3,7 @@
 //! errors.
 
 use std::error::Error;
+use std::fmt;
 
 error_chain! {
     types {
@@ -75,8 +76,23 @@ impl<E> From<E> for FromXmlError
 impl FromXmlError {
     pub fn into_xpath_error(self) -> XpathError {
         match self {
-            FromXmlError::Absent => "XML Value was missing.".into(),
+            FromXmlError::Absent => "XML value was missing.".into(),
             FromXmlError::Other(err) => err,
+        }
+    }
+}
+
+impl Error for FromXmlError {
+    fn description(&self) -> &str {
+        "There was an error converting this type from XML."
+    }
+}
+
+impl fmt::Display for FromXmlError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            FromXmlError::Absent => write!(f, "XML value was missing."),
+            FromXmlError::Other(ref e) => e.fmt(f),
         }
     }
 }
