@@ -24,10 +24,59 @@ error_chain! {
             display("XPath expression '{}' failed to find a node.", xpath)
         }
 
-        /// Conversion from xml failed, used for failures in `FromXml` and `OptionFromXml` traits.
+        /// Conversion from XML failed,
+        /// used for custom failures in `FromXml` and `OptionFromXml` traits.
         FromXmlError(err: Box<Error + Send>) {
             description("Conversion from XML failed.")
             display("Conversion from XML failed: {:?}", err)
+        }
+
+        MissingValue(info: String) {
+            description("A required value was missing in the document.")
+            display("A required value was missing from the document: {}", info)
+        }
+    }
+}
+
+/// An Error which can occur during the conversion of types from XML.
+#[derive(Debug)]
+pub enum FromXmlError {
+    /// The value was not found in the document.
+    Absent,
+
+    /// Any error other than absence of a value occuring during conversion of a type from XML.
+    Other(XpathError),
+}
+
+// This is rather ugly right now so better don't use this in production code yet.
+#[cfg(test)]
+impl PartialEq for FromXmlError {
+    fn eq(&self, other: &Self) -> bool {
+        match *self {
+            FromXmlError::Absent => {
+                match *other {
+                    FromXmlError::Absent => true,
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
+impl<E> From<E> for FromXmlError
+    where E: Into<XpathError>
+{
+    fn from(e: E) -> Self {
+        FromXmlError::Other(e.into())
+    }
+}
+
+impl FromXmlError {
+    pub fn into_xpath_error(self) -> XpathError {
+        match self {
+            FromXmlError::Absent => "XML Value was missing.".into(),
+            FromXmlError::Other(err) => err,
         }
     }
 }

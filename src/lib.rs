@@ -45,10 +45,10 @@ extern crate sxd_document;
 extern crate sxd_xpath;
 
 pub mod errors;
-pub use self::errors::{XpathError, XpathErrorKind};
+pub use self::errors::{FromXmlError, XpathError, XpathErrorKind};
 
 pub mod context;
 pub use self::context::Context;
 
 pub mod reader;
-pub use self::reader::{FromXml, OptionFromXml, XpathReader, XpathStrReader, XpathNodeReader};
+pub use self::reader::{FromXml, XpathReader, XpathStrReader, XpathNodeReader};

@@ -8,6 +8,15 @@ use sxd_xpath::Value::Nodeset;
 
 use super::{XpathError, XpathErrorKind};
 use super::context::Context;
+use errors::FromXmlError;
+
+fn extract_option<T: FromXml>(s: Result<T, FromXmlError>) -> Result<Option<T>, XpathError> {
+    match s {
+        Ok(val) => Ok(Some(val)),
+        Err(FromXmlError::Absent) => Ok(None),
+        Err(err) => Err(err.into_xpath_error()),
+    }
+}
 
 /// A trait to abstract the idea of something that can be parsed from XML.
 pub trait FromXml
@@ -15,27 +24,14 @@ pub trait FromXml
 {
     /// Read an instance of `Self` from the provided `reader`.
     ///
-    /// The reader can be relative to a specific element. Whether the root of the document contains
-    /// the element to be parsed or is the element to be parsed can be specified by the additional
-    /// traits `FromXmlContained` and `FromXmlElement`.
-    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, XpathError> where R: XpathReader<'d>;
-}
-
-/// Similar to `FromXml` abstracts the idea of an `Option` of something that can be parsed from XML.
-pub trait OptionFromXml
-    where Self: Sized
-{
-    /// Read an instance of `Option<Self>` from the provided `reader`.
-    ///
-    /// Depending on the individual implementor an empty value might not be differentiable from
-    /// absence of a value. The only contract is that an absence of a specified value **should
-    /// not** yield an Error but instead return a None variant.
+    /// If a value is absent `Err(FromXmlError::Absent)` should be returned instead of another
+    /// error variant, because this way `read_option` and similar functions will be able to handle
+    /// perform as intended.
     ///
     /// The reader can be relative to a specific element. Whether the root of the document contains
     /// the element to be parsed or is the element to be parsed can be specified by the additional
     /// traits `FromXmlContained` and `FromXmlElement`.
-    fn option_from_xml<'d, R>(reader: &'d R) -> Result<Option<Self>, XpathError>
-        where R: XpathReader<'d>;
+    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError> where R: XpathReader<'d>;
 }
 
 /// `FromXml` takes a reader as input whose root element **contains** the relevant element.
@@ -62,15 +58,15 @@ pub trait XpathReader<'d> {
         where V: FromXml
     {
         let reader = self.relative(xpath_expr)?;
-        V::from_xml(&reader)
+        V::from_xml(&reader).map_err(|e| e.into_xpath_error())
     }
 
     /// Read the result of the XPath expression into a value of type `Option<V>`.
     fn read_option<V>(&'d self, xpath_expr: &str) -> Result<Option<V>, XpathError>
-        where V: OptionFromXml
+        where V: FromXml
     {
         match self.relative(xpath_expr) {
-            Ok(reader) => V::option_from_xml(&reader),
+            Ok(reader) => extract_option(V::from_xml(&reader)),
             Err(XpathError(XpathErrorKind::NodeNotFound(_), _)) => Ok(None),
             Err(e) => Err(e),
         }
@@ -84,11 +80,14 @@ pub trait XpathReader<'d> {
     {
         match self.evaluate(xpath_expr)? {
             Nodeset(nodeset) => {
-                nodeset.document_order()
+                nodeset
+                    .document_order()
                     .iter()
                     .map(|node| {
-                        XpathNodeReader::new(*node, self.context()).and_then(|r| Item::from_xml(&r))
-                    })
+                             XpathNodeReader::new(*node, self.context()).and_then(|r| {
+                            Item::from_xml(&r).map_err(|e| e.into_xpath_error())
+                        })
+                         })
                     .collect()
             }
             _ => Ok(Vec::new()),
@@ -99,15 +98,17 @@ pub trait XpathReader<'d> {
     ///
     /// An absence of any values will return `Ok` with an empty `Vec` inside.
     fn read_vec_options<Item>(&'d self, xpath_expr: &str) -> Result<Vec<Option<Item>>, XpathError>
-        where Item: OptionFromXml
+        where Item: FromXml
     {
         match self.evaluate(xpath_expr)? {
             Nodeset(nodeset) => {
-                nodeset.document_order()
+                nodeset
+                    .document_order()
                     .iter()
                     .map(|node| {
-                        XpathNodeReader::new(*node, self.context()).and_then(|r| Item::option_from_xml(&r))
-                    })
+                             XpathNodeReader::new(*node, self.context())
+                                 .and_then(|r| extract_option(Item::from_xml(&r)))
+                         })
                     .collect()
             }
             _ => Ok(Vec::new()),
@@ -202,21 +203,17 @@ impl<'d> XpathReader<'d> for XpathNodeReader<'d> {
 impl FromXmlElement for String {}
 
 impl FromXml for String {
-    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, XpathError>
-        where R: XpathReader<'d>
-    {
-        Ok(reader.evaluate(".")?.string())
-    }
-}
-
-impl OptionFromXml for String {
     /// An empty string is parsed to `None` while any other string is parsed to `Some(String)`
     /// containig the string value.
-    fn option_from_xml<'d, R>(reader: &'d R) -> Result<Option<Self>, XpathError>
+    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
         where R: XpathReader<'d>
     {
-        let s = String::from_xml(reader)?;
-        if s.is_empty() { Ok(None) } else { Ok(Some(s)) }
+        let s = reader.evaluate(".")?.string();
+        if s.is_empty() {
+            Err(FromXmlError::Absent)
+        } else {
+            Ok(s)
+        }
     }
 }
 
@@ -226,7 +223,7 @@ macro_rules! from_float_types {
             impl FromXmlElement for $type { }
 
             impl FromXml for $type {
-                fn from_xml<'d, R>(reader: &'d R) -> Result<Self, XpathError>
+                fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
                     where R: XpathReader<'d>
                 {
                     let num = reader.evaluate(".")?.number();
@@ -245,7 +242,7 @@ macro_rules! from_parse_str {
             impl FromXmlElement for $type { }
 
             impl FromXml for $type {
-                fn from_xml<'d, R>(reader: &'d R) -> Result<Self, XpathError>
+                fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
                     where R: XpathReader<'d>
                 {
                     let s = String::from_xml(reader)?;
@@ -276,20 +273,6 @@ mod tests {
         r#"<?xml version="1.0"?><root><title>Hello World</title><empty/></root>"#;
 
     #[test]
-    fn string_option_from_xml() {
-        let context = Context::new();
-        let reader = XpathStrReader::new(XML_STRING, &context).unwrap();
-
-        let title = reader.relative("//title").unwrap();
-        assert_eq!(String::option_from_xml(&title).unwrap(),
-                   Some("Hello World".to_string()));
-
-        let empty = reader.relative("//empty").unwrap();
-        assert_eq!(String::option_from_xml(&empty).unwrap(), None);
-
-    }
-
-    #[test]
     fn string_from_xml() {
         let context = Context::new();
         let reader = XpathStrReader::new(XML_STRING, &context).unwrap();
@@ -298,7 +281,8 @@ mod tests {
         assert_eq!(String::from_xml(&title).unwrap(), "Hello World".to_string());
 
         let empty = reader.relative("//empty").unwrap();
-        assert_eq!(String::from_xml(&empty).unwrap(), "".to_string());
+        assert_eq!(String::from_xml(&empty).err().unwrap(),
+                   FromXmlError::Absent);
     }
 
     #[test]
@@ -327,6 +311,19 @@ mod tests {
     }
 
     #[test]
+    fn num_absent() {
+        let xml = r#"<?xml version="1.0"?><root><float>-23.85</float><int>42</int></root>"#;
+        let context = Context::new();
+        let reader = XpathStrReader::new(xml, &context).unwrap();
+
+        let opt1: Option<f32> = reader.read_option("//float").unwrap();
+        let opt2: Option<f32> = reader.read_option("//ffloat").unwrap();
+
+        assert_eq!(opt1, Some(-23.85f32));
+        assert_eq!(opt2, None);
+    }
+
+    #[test]
     fn bool_from_xml() {
         let xml = r#"<?xml version="1.0"?><root><t>true</t><f>false</f></root>"#;
         let context = Context::new();
@@ -345,9 +342,7 @@ mod tests {
         let context = Context::new();
         let reader = XpathStrReader::new(xml, &context).unwrap();
 
-        let tags = reader
-            .read_vec::<String>("//book/tags/tag/@name")
-            .unwrap();
+        let tags = reader.read_vec::<String>("//book/tags/tag/@name").unwrap();
         assert_eq!(tags, vec!["cyberpunk".to_string(), "sci-fi".to_string()]);
     }
 
@@ -357,9 +352,7 @@ mod tests {
         let context = Context::new();
         let reader = XpathStrReader::new(xml, &context).unwrap();
 
-        let tags = reader
-            .read_vec::<String>("//book/tags/tag/@name")
-            .unwrap();
+        let tags = reader.read_vec::<String>("//book/tags/tag/@name").unwrap();
         assert_eq!(tags, Vec::<String>::new());
     }
 
