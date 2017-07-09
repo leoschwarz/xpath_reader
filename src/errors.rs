@@ -66,7 +66,8 @@ impl PartialEq for FromXmlError {
 }
 
 impl<E> From<E> for FromXmlError
-    where E: Into<XpathError>
+where
+    E: Into<XpathError>,
 {
     fn from(e: E) -> Self {
         FromXmlError::Other(e.into())
