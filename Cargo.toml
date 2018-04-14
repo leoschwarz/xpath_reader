@@ -1,6 +1,6 @@
 [package]
 name = "xpath_reader"
-version = "0.3.2"
+version = "0.4.0"
 authors = ["Leo Schwarz <mail@leoschwarz.com>"]
 license = "Apache-2.0"
 description = "Provides a convenient API to read from XML using XPath queries."
@@ -12,7 +12,7 @@ keywords = ["xpath","xml"]
 default = []
 
 [dependencies]
-error-chain = "0.10.0"
+error-chain = "0.11"
 sxd-document = "0.2.1"
 sxd-xpath = "0.4.0"
 
