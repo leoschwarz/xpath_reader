@@ -1,4 +1,4 @@
-// Copyright 2017 Leonardo Schwarz <mail@leoschwarz.com>
+// Copyright 2017-2018 Leonardo Schwarz <mail@leoschwarz.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,13 +39,11 @@
 //! assert_eq!(tags, vec!["cyberpunk".to_string(), "sci-fi".to_string()]);
 //! ```
 
-#[macro_use]
-extern crate error_chain;
 extern crate sxd_document;
 extern crate sxd_xpath;
 
-pub mod errors;
-pub use self::errors::{FromXmlError, XpathError, XpathErrorKind};
+mod errors;
+pub use self::errors::Error;
 
 pub mod context;
 pub use self::context::Context;

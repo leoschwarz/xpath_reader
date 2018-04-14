@@ -4,11 +4,9 @@ use sxd_document::Package;
 use sxd_document::parser::parse as sxd_parse;
 use sxd_xpath::{Value, Factory, XPath};
 use sxd_xpath::nodeset::Node;
-use sxd_xpath::Value::Nodeset;
 
-use {XpathError, XpathErrorKind};
+use errors::{Error, XpathError};
 use context::Context;
-use errors::{ChainXpathErr, FromXmlError};
 
 // TODO: Resolve the ambiguity between the past FromXmlElement and FromXmlContained.
 /// A value that can be deserialized from a XML reader.
@@ -22,13 +20,9 @@ where
     /// however for composability purposes a best effort approach should
     /// be made to only return an Error when there is no other way to
     /// represent the absence of a value for `Self`.
-    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
+    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, Error>
     where
         R: XpathReader<'d>;
-}
-
-fn error_message_read(xpath_expr: &str) -> String {
-    format!("Evaluating XPath expression `{}` failed.", xpath_expr)
 }
 
 /// Allows to execute XPath expressions on some kind of document.
@@ -39,37 +33,33 @@ pub trait XpathReader<'d> {
     ///
     /// Normally you won't have to use this method at all and use `read`, `read_option` or
     /// `read_vec` instead.
-    fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, XpathError>;
+    fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, Error>;
 
     /// Returns a reference to the `Context` used by the reader instance.
     fn context(&'d self) -> &'d Context<'d>;
 
     /// Read the result of the xpath expression into a value of type `V`.
-    fn read<V>(&'d self, xpath_expr: &str) -> Result<V, XpathError>
+    fn read<V>(&'d self, xpath_expr: &str) -> Result<V, Error>
     where
         V: FromXml,
     {
         let reader = self.relative(xpath_expr)?;
-        V::from_xml(&reader).map_err(|e| e.into_xpath_error())
+        V::from_xml(&reader)
     }
 
     /// Evaluates an XPath query, takes the first returned node (in document order) and creates
     /// a new `XpathNodeReader` with that node at its root.
-    fn relative(&'d self, xpath_expr: &str) -> Result<XpathNodeReader<'d>, XpathError> {
-        let node: Node<'d> = match self.evaluate(xpath_expr).chain_err(
-            || error_message_read(xpath_expr),
-        )? {
+    fn relative(&'d self, xpath_expr: &str) -> Result<XpathNodeReader<'d>, Error> {
+        let node: Node<'d> = match self.evaluate(xpath_expr)? {
             Value::Nodeset(nodeset) => {
-                let res: Result<Node<'d>, XpathError> =
+                let res: Result<Node<'d>, Error> =
                     nodeset.document_order_first().ok_or_else(|| {
-                        XpathErrorKind::NodeNotFound(xpath_expr.to_string()).into()
+                        Error::NodeNotFound(xpath_expr.to_string())
                     });
                 res?
             }
             _ => {
-                return Err(
-                    format!("XPath didn't specify a nodeset: '{}'", xpath_expr).into(),
-                )
+                return Err(Error::Xpath(XpathError::NotNodeset(xpath_expr.into())));
             }
         };
         XpathNodeReader::new(node, self.context())
@@ -84,27 +74,27 @@ pub struct XpathStrReader<'d> {
 }
 
 impl<'d> XpathStrReader<'d> {
-    pub fn new(xml: &str, context: &'d Context<'d>) -> Result<Self, XpathError> {
+    pub fn new(xml: &str, context: &'d Context<'d>) -> Result<Self, Error> {
         Ok(Self {
             context: context,
             factory: Factory::default(),
-            package: sxd_parse(xml)?,
+            package: sxd_parse(xml).map_err(|e| Error::ParseXml(e.1[0]))?,
         })
     }
 }
 
-fn build_xpath(factory: &Factory, xpath_expr: &str) -> Result<XPath, XpathError> {
-    factory.build(xpath_expr)?.ok_or_else(|| {
-        "Xpath instance was `None`!".into()
-    })
+fn build_xpath(factory: &Factory, xpath_expr: &str) -> Result<XPath, Error> {
+    factory.build(xpath_expr)
+        .map_err(|e| Error::Xpath(e.into()))?
+        .ok_or(Error::Xpath(XpathError::Empty))
 }
 
 impl<'d> XpathReader<'d> for XpathStrReader<'d> {
-    fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, XpathError> {
+    fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, Error> {
         let xpath = build_xpath(&self.factory, xpath_expr)?;
         xpath
             .evaluate(&self.context, self.package.as_document().root())
-            .map_err(XpathError::from)
+            .map_err(|e| Error::Xpath(e.into()))
     }
 
     fn context(&'d self) -> &'d Context<'d> {
@@ -120,7 +110,7 @@ pub struct XpathNodeReader<'d> {
 }
 
 impl<'d> XpathNodeReader<'d> {
-    pub fn new<N>(node: N, context: &'d Context<'d>) -> Result<Self, XpathError>
+    pub fn new<N>(node: N, context: &'d Context<'d>) -> Result<Self, Error>
     where
         N: Into<Node<'d>>,
     {
@@ -133,10 +123,10 @@ impl<'d> XpathNodeReader<'d> {
 }
 
 impl<'d> XpathReader<'d> for XpathNodeReader<'d> {
-    fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, XpathError> {
+    fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, Error> {
         let xpath = build_xpath(&self.factory, xpath_expr)?;
-        xpath.evaluate(self.context, self.node).map_err(
-            XpathError::from,
+        xpath.evaluate(self.context, self.node).map_err(|e|
+            Error::Xpath(e.into())
         )
     }
 
@@ -146,7 +136,7 @@ impl<'d> XpathReader<'d> for XpathNodeReader<'d> {
 }
 
 impl<T> FromXml for Vec<T> where T: FromXml {
-    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
+    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, Error>
     where
         R: XpathReader<'d>
     {
@@ -156,7 +146,7 @@ impl<T> FromXml for Vec<T> where T: FromXml {
     /// Execute an XPath expression and parse the result into a vector of `Item` instances.
     ///
     /// An absence of any values will return `Ok` with an empty `Vec` inside.
-    fn read_vec<Item>(&'d self, xpath_expr: &str) -> Result<Vec<Item>, XpathError>
+    fn read_vec<Item>(&'d self, xpath_expr: &str) -> Result<Vec<Item>, Error>
     where
         Item: FromXml,
     {
@@ -182,7 +172,7 @@ impl<T> FromXml for Vec<T> where T: FromXml {
 }
 
 impl FromXml for String {
-    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
+    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, Error>
     where
         R: XpathReader<'d>,
     {
@@ -191,7 +181,7 @@ impl FromXml for String {
 }
 
 impl FromXml for Option<String> {
-    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
+    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, Error>
     where
         R: XpathReader<'d>
     {
@@ -208,20 +198,20 @@ macro_rules! from_parse_str {
     ( $( $type:ty ),* ) => {
         $(
             impl FromXml for $type {
-                fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
+                fn from_xml<'d, R>(reader: &'d R) -> Result<Self, Error>
                     where R: XpathReader<'d>
                 {
                     let s = String::from_xml(reader)?;
-                    Ok(s.parse()?)
+                    s.parse::<$type>().map_err(|e| Error::ParseValue(Box::new(e)))
                 }
             }
 
             impl FromXml for Option<$type> {
-                fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
+                fn from_xml<'d, R>(reader: &'d R) -> Result<Self, Error>
                     where R: XpathReader<'d>
                 {
                     if let Some(s) = Option::<String>::from_xml(reader)? {
-                        Ok(Some(s.parse()?))
+                        Ok(Some(s.parse::<$type>().map_err(|e| Error::ParseValue(Box::new(e)))?))
                     } else {
                         Ok(None)
                     }
@@ -267,6 +257,10 @@ mod tests {
             Option::<String>::from_xml(&empty).unwrap(),
             None
         );
+
+        let inexistent = reader.relative("//inexistent").unwrap();
+        assert!(String::from_xml(&empty).is_err());
+        assert_eq!(Option::<String>::from_xml(&empty).unwrap(), None);
     }
 
     #[test]

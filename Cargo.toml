@@ -12,7 +12,6 @@ keywords = ["xpath","xml"]
 default = []
 
 [dependencies]
-error-chain = "0.11"
-sxd-document = "0.2.1"
-sxd-xpath = "0.4.0"
+sxd-document = "0.2"
+sxd-xpath = "0.4"
 
