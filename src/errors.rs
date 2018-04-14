@@ -42,27 +42,11 @@ error_chain! {
 /// An Error which can occur during the conversion of types from XML.
 #[derive(Debug)]
 pub enum FromXmlError {
-    /// The value was not found in the document.
-    Absent,
+    // The value was not found in the document.
+    //Absent,
 
     /// Any error other than absence of a value occuring during conversion of a type from XML.
     Other(XpathError),
-}
-
-// This is rather ugly right now so better don't use this in production code yet.
-#[cfg(test)]
-impl PartialEq for FromXmlError {
-    fn eq(&self, other: &Self) -> bool {
-        match *self {
-            FromXmlError::Absent => {
-                match *other {
-                    FromXmlError::Absent => true,
-                    _ => false,
-                }
-            }
-            _ => false,
-        }
-    }
 }
 
 impl<E> From<E> for FromXmlError
@@ -77,7 +61,6 @@ where
 impl FromXmlError {
     pub fn into_xpath_error(self) -> XpathError {
         match self {
-            FromXmlError::Absent => "XML value was missing.".into(),
             FromXmlError::Other(err) => err,
         }
     }
@@ -92,7 +75,6 @@ impl Error for FromXmlError {
 impl fmt::Display for FromXmlError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            FromXmlError::Absent => write!(f, "XML value was missing."),
             FromXmlError::Other(ref e) => e.fmt(f),
         }
     }
@@ -113,6 +95,7 @@ macro_rules! from_xml_error {
 from_xml_error!(
     ::std::str::ParseBoolError;
     ::std::num::ParseIntError;
+    ::std::num::ParseFloatError;
 );
 
 // TODO: Take this upstream, either the tuple should implement std::Error or another type should be

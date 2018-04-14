@@ -10,38 +10,22 @@ use {XpathError, XpathErrorKind};
 use context::Context;
 use errors::{ChainXpathErr, FromXmlError};
 
-fn extract_option<T: FromXml>(s: Result<T, FromXmlError>) -> Result<Option<T>, XpathError> {
-    match s {
-        Ok(val) => Ok(Some(val)),
-        Err(FromXmlError::Absent) => Ok(None),
-        Err(err) => Err(err.into_xpath_error()),
-    }
-}
-
-/// A trait to abstract the idea of something that can be parsed from XML.
+// TODO: Resolve the ambiguity between the past FromXmlElement and FromXmlContained.
+/// A value that can be deserialized from a XML reader.
 pub trait FromXml
 where
     Self: Sized,
 {
-    /// Read an instance of `Self` from the provided `reader`.
+    /// Try to read an instance of `Self` from the provided `reader`.
     ///
-    /// If a value is absent `Err(FromXmlError::Absent)` should be returned instead of another
-    /// error variant, because this way `read_option` and similar functions will be able to handle
-    /// perform as intended.
-    ///
-    /// The reader can be relative to a specific element. Whether the root of the document contains
-    /// the element to be parsed or is the element to be parsed can be specified by the additional
-    /// traits `FromXmlContained` and `FromXmlElement`.
+    /// The implementor gets to decide what is an error and what is not,
+    /// however for composability purposes a best effort approach should
+    /// be made to only return an Error when there is no other way to
+    /// represent the absence of a value for `Self`.
     fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
     where
         R: XpathReader<'d>;
 }
-
-/// `FromXml` takes a reader as input whose root element **contains** the relevant element.
-pub trait FromXmlContained: FromXml {}
-
-/// `FromXml` takes a reader as input whose root element **is** the relevant element.
-pub trait FromXmlElement: FromXml {}
 
 fn error_message_read(xpath_expr: &str) -> String {
     format!("Evaluating XPath expression `{}` failed.", xpath_expr)
@@ -67,68 +51,6 @@ pub trait XpathReader<'d> {
     {
         let reader = self.relative(xpath_expr)?;
         V::from_xml(&reader).map_err(|e| e.into_xpath_error())
-    }
-
-    /// Read the result of the XPath expression into a value of type `Option<V>`.
-    fn read_option<V>(&'d self, xpath_expr: &str) -> Result<Option<V>, XpathError>
-    where
-        V: FromXml,
-    {
-        match self.relative(xpath_expr) {
-            Ok(reader) => extract_option(V::from_xml(&reader)),
-            Err(XpathError(XpathErrorKind::NodeNotFound(_), _)) => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
-
-    /// Execute an XPath expression and parse the result into a vector of `Item` instances.
-    ///
-    /// An absence of any values will return `Ok` with an empty `Vec` inside.
-    fn read_vec<Item>(&'d self, xpath_expr: &str) -> Result<Vec<Item>, XpathError>
-    where
-        Item: FromXml,
-    {
-        match self.evaluate(xpath_expr).chain_err(
-            || error_message_read(xpath_expr),
-        )? {
-            Nodeset(nodeset) => {
-                nodeset
-                    .document_order()
-                    .iter()
-                    .map(|node| {
-                        XpathNodeReader::new(*node, self.context()).and_then(|r| {
-                            Item::from_xml(&r).map_err(|e| e.into_xpath_error())
-                        })
-                    })
-                    .collect()
-            }
-            _ => Ok(Vec::new()),
-        }
-    }
-
-    /// Execute an XPath expression and parse it into a vector of `Option<Item>` instances.
-    ///
-    /// An absence of any values will return `Ok` with an empty `Vec` inside.
-    fn read_vec_options<Item>(&'d self, xpath_expr: &str) -> Result<Vec<Option<Item>>, XpathError>
-    where
-        Item: FromXml,
-    {
-        match self.evaluate(xpath_expr).chain_err(
-            || error_message_read(xpath_expr),
-        )? {
-            Nodeset(nodeset) => {
-                nodeset
-                    .document_order()
-                    .iter()
-                    .map(|node| {
-                        XpathNodeReader::new(*node, self.context()).and_then(|r| {
-                            extract_option(Item::from_xml(&r))
-                        })
-                    })
-                    .collect()
-            }
-            _ => Ok(Vec::new()),
-        }
     }
 
     /// Evaluates an XPath query, takes the first returned node (in document order) and creates
@@ -223,48 +145,68 @@ impl<'d> XpathReader<'d> for XpathNodeReader<'d> {
     }
 }
 
-impl FromXmlElement for String {}
+impl<T> FromXml for Vec<T> where T: FromXml {
+    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
+    where
+        R: XpathReader<'d>
+    {
+        unimplemented!()
+/*
+    // TODO: Can this be done with a blanket impl?
+    /// Execute an XPath expression and parse the result into a vector of `Item` instances.
+    ///
+    /// An absence of any values will return `Ok` with an empty `Vec` inside.
+    fn read_vec<Item>(&'d self, xpath_expr: &str) -> Result<Vec<Item>, XpathError>
+    where
+        Item: FromXml,
+    {
+        match self.evaluate(xpath_expr).chain_err(
+            || error_message_read(xpath_expr),
+        )? {
+            Nodeset(nodeset) => {
+                nodeset
+                    .document_order()
+                    .iter()
+                    .map(|node| {
+                        XpathNodeReader::new(*node, self.context()).and_then(|r| {
+                            Item::from_xml(&r).map_err(|e| e.into_xpath_error())
+                        })
+                    })
+                    .collect()
+            }
+            _ => Ok(Vec::new()),
+        }
+    }
+*/
+    }
+}
 
 impl FromXml for String {
-    /// An empty string is parsed to `None` while any other string is parsed to `Some(String)`
-    /// containig the string value.
     fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
     where
         R: XpathReader<'d>,
     {
+        Ok(reader.evaluate(".")?.string())
+    }
+}
+
+impl FromXml for Option<String> {
+    fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
+    where
+        R: XpathReader<'d>
+    {
         let s = reader.evaluate(".")?.string();
         if s.is_empty() {
-            Err(FromXmlError::Absent)
+            Ok(None)
         } else {
-            Ok(s)
+            Ok(Some(s))
         }
     }
 }
 
-macro_rules! from_float_types {
-    ( $( $type:ty ),* ) => {
-        $(
-            impl FromXmlElement for $type { }
-
-            impl FromXml for $type {
-                fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
-                    where R: XpathReader<'d>
-                {
-                    let num = reader.evaluate(".")?.number();
-                    Ok(num as $type)
-                }
-            }
-        )*
-    }
-}
-
-from_float_types!(f32, f64);
-
 macro_rules! from_parse_str {
     ( $( $type:ty ),* ) => {
         $(
-            impl FromXmlElement for $type { }
-
             impl FromXml for $type {
                 fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
                     where R: XpathReader<'d>
@@ -273,11 +215,23 @@ macro_rules! from_parse_str {
                     Ok(s.parse()?)
                 }
             }
+
+            impl FromXml for Option<$type> {
+                fn from_xml<'d, R>(reader: &'d R) -> Result<Self, FromXmlError>
+                    where R: XpathReader<'d>
+                {
+                    if let Some(s) = Option::<String>::from_xml(reader)? {
+                        Ok(Some(s.parse()?))
+                    } else {
+                        Ok(None)
+                    }
+                }
+            }
         )*
     }
 }
 
-from_parse_str!(u8, u16, u32, u64, i8, i16, i32, i64, bool);
+from_parse_str!(f32, f64, u8, u16, u32, u64, i8, i16, i32, i64, bool);
 
 #[cfg(test)]
 mod tests {
@@ -304,12 +258,14 @@ mod tests {
         let reader = XpathStrReader::new(XML_STRING, &context).unwrap();
 
         let title = reader.relative("//title").unwrap();
-        assert_eq!(String::from_xml(&title).unwrap(), "Hello World".to_string());
+        assert_eq!(String::from_xml(&title).unwrap(), "Hello World");
+        assert_eq!(Option::<String>::from_xml(&title).unwrap(), Some("Hello World".to_string()));
 
         let empty = reader.relative("//empty").unwrap();
+        assert_eq!(String::from_xml(&empty).unwrap(), "");
         assert_eq!(
-            String::from_xml(&empty).err().unwrap(),
-            FromXmlError::Absent
+            Option::<String>::from_xml(&empty).unwrap(),
+            None
         );
     }
 
@@ -344,8 +300,8 @@ mod tests {
         let context = Context::new();
         let reader = XpathStrReader::new(xml, &context).unwrap();
 
-        let opt1: Option<f32> = reader.read_option("//float").unwrap();
-        let opt2: Option<f32> = reader.read_option("//ffloat").unwrap();
+        let opt1: Option<f32> = reader.read("//float").unwrap();
+        let opt2: Option<f32> = reader.read("//ffloat").unwrap();
 
         assert_eq!(opt1, Some(-23.85f32));
         assert_eq!(opt2, None);
@@ -370,7 +326,7 @@ mod tests {
         let context = Context::new();
         let reader = XpathStrReader::new(xml, &context).unwrap();
 
-        let tags = reader.read_vec::<String>("//book/tags/tag/@name").unwrap();
+        let tags = reader.read::<Vec<String>>("//book/tags/tag/@name").unwrap();
         assert_eq!(tags, vec!["cyberpunk".to_string(), "sci-fi".to_string()]);
     }
 
@@ -380,33 +336,7 @@ mod tests {
         let context = Context::new();
         let reader = XpathStrReader::new(xml, &context).unwrap();
 
-        let tags = reader.read_vec::<String>("//book/tags/tag/@name").unwrap();
+        let tags = reader.read::<Vec<String>>("//book/tags/tag/@name").unwrap();
         assert_eq!(tags, Vec::<String>::new());
-    }
-
-    #[test]
-    fn vec_options() {
-        let xml = r#"<?xml version="1.0"?><book><tags><tag name="cyberpunk"/><tag name=""/><tag name="sci-fi"/></tags></book>"#;
-        let context = Context::new();
-        let reader = XpathStrReader::new(xml, &context).unwrap();
-
-        // Read empty values as None:
-        let tags = reader
-            .read_vec_options::<String>("//book/tags/tag/@name")
-            .unwrap();
-        assert_eq!(
-            tags,
-            vec![
-                Some("cyberpunk".to_string()),
-                None,
-                Some("sci-fi".to_string()),
-            ]
-        );
-
-        // Don't fail on absence of any value at all, but return an empty vec:
-        let tags = reader
-            .read_vec_options::<String>("//book/lala/tag/@name")
-            .unwrap();
-        assert_eq!(tags, Vec::<Option<String>>::new());
     }
 }
