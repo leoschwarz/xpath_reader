@@ -49,4 +49,4 @@ pub mod context;
 pub use self::context::Context;
 
 pub mod reader;
-pub use self::reader::{FromXml, XpathNodeReader, XpathReader, XpathStrReader};
+pub use self::reader::{FromXml, XpathReader};
