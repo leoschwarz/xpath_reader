@@ -23,33 +23,6 @@ where
     fn from_xml<'d>(reader: &'d XpathReader<'d>) -> Result<Self, Error>;
 }
 
-/*
-pub trait XpathReader<'d> {
-    /// Evaluate an Xpath expression on the root of this reader.
-    ///
-    /// Normally you won't have to use this method at all and use `read`, `read_option` or
-    /// `read_vec` instead.
-    fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, Error>;
-
-    /// Evaluates an XPath query, takes the first returned node (in document order) and creates
-    /// a new `XpathNodeReader` with that node at its root.
-    fn relative(&'d self, xpath_expr: &str) -> Result<XpathNodeReader<'d>, Error> {
-        let node: Node<'d> = match self.evaluate(xpath_expr)? {
-            Value::Nodeset(nodeset) => {
-                let res: Result<Node<'d>, Error> = nodeset
-                    .document_order_first()
-                    .ok_or_else(|| Error::NodeNotFound(xpath_expr.to_string()));
-                res?
-            }
-            _ => {
-                return Err(Error::Xpath(XpathError::NotNodeset(xpath_expr.into())));
-            }
-        };
-        XpathNodeReader::new(node, self.context())
-    }
-}
-*/
-
 // TODO: Better docstring.
 /// Allows to execute XPath expressions on some kind of document.
 pub struct XpathReader<'d> {
@@ -95,9 +68,27 @@ impl<'d> XpathReader<'d> {
         V::from_xml(&reader)
     }
 
+    // TODO: Revise this method.
+    // Evaluates an XPath query, takes the first returned node (in document order) and creates
+    // a new `XpathNodeReader` with that node at its root.
     pub fn relative(&'d self, xpath_expr: &str) -> Result<Self, Error> {
-        // TODO
-        unimplemented!()
+        let node: Node<'d> = match self.evaluate(xpath_expr)? {
+            Value::Nodeset(nodeset) => {
+                let res: Result<Node<'d>, Error> = nodeset
+                    .document_order_first()
+                    .ok_or_else(|| Error::NodeNotFound(xpath_expr.to_string()));
+                res?
+            }
+            _ => {
+                return Err(Error::Xpath(XpathError::NotNodeset(xpath_expr.into())));
+            }
+        };
+        Ok(XpathReader {
+            context: self.context,
+            // TODO
+            factory: Factory::new(),
+            root: XpathReaderRoot::Node(node),
+        })
     }
 
     fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, Error> {
@@ -126,34 +117,22 @@ where
 {
     fn from_xml<'d>(reader: &'d XpathReader<'d>) -> Result<Self, Error>
     {
-        unimplemented!()
-        /*
-    // TODO: Can this be done with a blanket impl?
-    /// Execute an XPath expression and parse the result into a vector of `Item` instances.
-    ///
-    /// An absence of any values will return `Ok` with an empty `Vec` inside.
-    fn read_vec<Item>(&'d self, xpath_expr: &str) -> Result<Vec<Item>, Error>
-    where
-        Item: FromXml,
-    {
-        match self.evaluate(xpath_expr).chain_err(
-            || error_message_read(xpath_expr),
-        )? {
-            Nodeset(nodeset) => {
+        // TODO: correct xpath (or actually there should be a different method to be used here,
+        // `reader.current()` or something like that)
+        match reader.evaluate(".")? {
+            Value::Nodeset(nodeset) => {
                 nodeset
                     .document_order()
                     .iter()
                     .map(|node| {
-                        XpathNodeReader::new(*node, self.context()).and_then(|r| {
-                            Item::from_xml(&r).map_err(|e| e.into_xpath_error())
+                        XpathReader::from_node(*node, reader.context).and_then(|r| {
+                            T::from_xml(&r)
                         })
                     })
                     .collect()
             }
             _ => Ok(Vec::new()),
         }
-    }
-*/
     }
 }
 
