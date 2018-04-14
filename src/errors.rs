@@ -29,7 +29,10 @@ pub enum XpathError {
     NotNodeset(String),
 }
 
-impl<T> From<T> for XpathError where T: Into<::sxd_xpath::Error> {
+impl<T> From<T> for XpathError
+where
+    T: Into<::sxd_xpath::Error>,
+{
     fn from(t: T) -> Self {
         XpathError::External(t.into())
     }
