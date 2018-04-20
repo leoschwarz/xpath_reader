@@ -14,14 +14,12 @@
 
 //! XPath based document parsing.
 
+use errors::{Error, XpathError};
 use std::borrow::{Borrow, Cow};
 use sxd_document::Package;
 use sxd_document::parser::parse as sxd_parse;
-use sxd_xpath::{Factory, Value, XPath};
+use sxd_xpath::{Context, Factory, Value, XPath};
 use sxd_xpath::nodeset::{Node, Nodeset};
-
-use errors::{Error, XpathError};
-use context::Context;
 
 /// A value that can be deserialized from a XML reader.
 pub trait FromXml
