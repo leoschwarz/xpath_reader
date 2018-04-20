@@ -81,8 +81,7 @@ impl<'d> Reader<'d> {
     /// Construct a new reader for the specified XML document.
     ///
     /// A context can be specified to define functions, variables and namespaces.
-    pub fn from_str(xml: &str, context: Option<&'d Context<'d>>) -> Result<Self, Error>
-    {
+    pub fn from_str(xml: &str, context: Option<&'d Context<'d>>) -> Result<Self, Error> {
         let package = sxd_parse(xml).map_err(|e| Error::ParseXml(e.1[0]))?;
 
         let context_refable = match context {
@@ -132,12 +131,8 @@ impl<'d> Reader<'d> {
     /// will be returned.
     pub fn anchor_node(&'d self) -> Option<Node<'d>> {
         match self.anchor {
-            Anchor::Nodeset(ref nodeset) => {
-                nodeset.document_order_first()
-            }
-            Anchor::Root(ref package) => {
-                Some(package.as_document().root().clone().into())
-            }
+            Anchor::Nodeset(ref nodeset) => nodeset.document_order_first(),
+            Anchor::Root(ref package) => Some(package.as_document().root().clone().into()),
         }
     }
 
@@ -175,9 +170,11 @@ impl<'d> Reader<'d> {
     fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, Error> {
         let xpath = build_xpath(&self.factory, xpath_expr)?;
         // TODO: Error message.
-        let anchor = self.anchor_node().ok_or_else(|| Error::NodeNotFound("".into()))?;
+        let anchor = self.anchor_node()
+            .ok_or_else(|| Error::NodeNotFound("".into()))?;
 
-        xpath.evaluate(self.context.borrow(), anchor)
+        xpath
+            .evaluate(self.context.borrow(), anchor)
             .map_err(|e| Error::Xpath(e.into()))
     }
 }
@@ -190,18 +187,23 @@ fn build_xpath(factory: &Factory, xpath_expr: &str) -> Result<XPath, Error> {
 }
 
 impl FromXml for String {
-    fn from_xml<'d>(reader: &'d Reader<'d>) -> Result<Self, Error>
-    {
-        reader.anchor_node().ok_or(Error::MissingAnchor).map(|n| n.string_value())
+    fn from_xml<'d>(reader: &'d Reader<'d>) -> Result<Self, Error> {
+        reader
+            .anchor_node()
+            .ok_or(Error::MissingAnchor)
+            .map(|n| n.string_value())
     }
 }
 
 impl FromXml for Option<String> {
-    fn from_xml<'d>(reader: &'d Reader<'d>) -> Result<Self, Error>
-    {
+    fn from_xml<'d>(reader: &'d Reader<'d>) -> Result<Self, Error> {
         Ok(reader.anchor_node().and_then(|node| {
             let s = node.string_value();
-            if s.is_empty() { None } else { Some(s) }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
         }))
     }
 }
@@ -210,9 +212,9 @@ impl<T> FromXml for Vec<T>
 where
     T: FromXml,
 {
-    fn from_xml<'d>(reader: &'d Reader<'d>) -> Result<Self, Error>
-    {
-        reader.anchor_nodeset()
+    fn from_xml<'d>(reader: &'d Reader<'d>) -> Result<Self, Error> {
+        reader
+            .anchor_nodeset()
             .document_order()
             .iter()
             .map(|node| {
