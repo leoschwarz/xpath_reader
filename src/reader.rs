@@ -1,6 +1,20 @@
-//! Main XPath reader code.
+// Copyright 2017-2018 Leonardo Schwarz <mail@leoschwarz.com>
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-use std::borrow::Cow;
+//! XPath based document parsing.
+
+use std::borrow::{Borrow, Cow};
 use sxd_document::Package;
 use sxd_document::parser::parse as sxd_parse;
 use sxd_xpath::{Factory, Value, XPath};
@@ -14,13 +28,12 @@ pub trait FromXml
 where
     Self: Sized,
 {
-    // TODO: Docstring.
-    /// Try to read an instance of `Self` from the provided `reader`.
+    /// Read an instance of `Self` from the provided `reader`.
     ///
-    /// The implementor gets to decide what is an error and what is not,
-    /// however for composability purposes a best effort approach should
-    /// be made to only return an Error when there is no other way to
-    /// represent the absence of a value for `Self`.
+    /// The exact semantics of when this fails or succeeds are implementor
+    /// defined. However for `Option<T>` a best effort approach should
+    /// be followed, returning `Ok(None)` in absence of a value instead of
+    /// an error.
     fn from_xml<'d>(reader: &'d Reader<'d>) -> Result<Self, Error>;
 }
 
@@ -29,35 +42,79 @@ enum Anchor<'d> {
     Root(Package),
 }
 
-// TODO: Docstring.
+// TODO: Is there a standard type for this in Rust, like Cow but without
+//       the clone requirement.
+enum Refable<'a, T: 'a> {
+    Owned(T),
+    Borrowed(&'a T),
+}
+
+impl<'a, T> Borrow<T> for Refable<'a, T> {
+    fn borrow(&self) -> &T {
+        match self {
+            &Refable::Owned(ref v) => &v,
+            &Refable::Borrowed(v) => v,
+        }
+    }
+}
+
+impl<'a, T> Refable<'a, T> {
+    fn clone_ref(&'a self) -> Self {
+        Refable::Borrowed(self.borrow())
+    }
+}
+
+/// Reads a XML tree using XPath queries.
+///
+/// In the most basic case the XML tree equates a complete XML document,
+/// however using the `relative` and `from_node` methods it's also
+/// possible to create `Reader` instances relative to a specific anchor
+/// nodeset.
 pub struct Reader<'d> {
-    context: &'d Context<'d>,
+    context: Refable<'d, Context<'d>>,
     // TODO
     factory: Factory,
     anchor: Anchor<'d>,
 }
 
 impl<'d> Reader<'d> {
-    pub fn from_str(xml: &str, context: &'d Context<'d>) -> Result<Self, Error>
+    /// Construct a new reader for the specified XML document.
+    ///
+    /// A context can be specified to define functions, variables and namespaces.
+    pub fn from_str(xml: &str, context: Option<&'d Context<'d>>) -> Result<Self, Error>
     {
         let package = sxd_parse(xml).map_err(|e| Error::ParseXml(e.1[0]))?;
 
-        Ok(Self {
-            context: context,
+        let context_refable = match context {
+            Some(c) => Refable::Borrowed(c),
+            None => Refable::Owned(Context::default()),
+        };
+
+        Ok(Reader {
+            context: context_refable,
             factory: Factory::default(),
             anchor: Anchor::Root(package),
         })
     }
 
-    pub fn from_node(node: Node<'d>, context: &'d Context<'d>) -> Self {
+    pub fn from_node(node: Node<'d>, context: Option<&'d Context<'d>>) -> Self {
         let mut nodeset = Nodeset::new();
         nodeset.add(node);
 
+        let context_refable = match context {
+            Some(c) => Refable::Borrowed(c),
+            None => Refable::Owned(Context::default()),
+        };
+
         Reader {
-            context: context,
+            context: context_refable,
             factory: Factory::default(),
             anchor: Anchor::Nodeset(nodeset),
         }
+    }
+
+    pub fn context(&'d self) -> &'d Context<'d> {
+        self.context.borrow()
     }
 
     /// Read the result of the xpath expression into a value of type `V`.
@@ -69,6 +126,10 @@ impl<'d> Reader<'d> {
         V::from_xml(&reader)
     }
 
+    /// Returns the anchor node of the current XML tree.
+    ///
+    /// If there are multiple nodes the first node in document order
+    /// will be returned.
     pub fn anchor_node(&'d self) -> Option<Node<'d>> {
         match self.anchor {
             Anchor::Nodeset(ref nodeset) => {
@@ -80,6 +141,7 @@ impl<'d> Reader<'d> {
         }
     }
 
+    /// Returns the anchor node set of the current reader.
     pub fn anchor_nodeset(&'d self) -> Cow<Nodeset<'d>> {
         match self.anchor {
             Anchor::Nodeset(ref nodeset) => Cow::Borrowed(nodeset),
@@ -103,7 +165,7 @@ impl<'d> Reader<'d> {
             }
         };
         Ok(Reader {
-            context: self.context,
+            context: self.context.clone_ref(),
             // TODO
             factory: Factory::default(),
             anchor: Anchor::Nodeset(nodeset),
@@ -115,7 +177,7 @@ impl<'d> Reader<'d> {
         // TODO: Error message.
         let anchor = self.anchor_node().ok_or_else(|| Error::NodeNotFound("".into()))?;
 
-        xpath.evaluate(&self.context, anchor)
+        xpath.evaluate(self.context.borrow(), anchor)
             .map_err(|e| Error::Xpath(e.into()))
     }
 }
@@ -154,7 +216,7 @@ where
             .document_order()
             .iter()
             .map(|node| {
-                let reader = Reader::from_node(*node, reader.context);
+                let reader = Reader::from_node(*node, Some(reader.context()));
                 T::from_xml(&reader)
             })
             .collect()
@@ -196,9 +258,7 @@ mod tests {
     fn xpath_str_reader() {
         let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
                      <root><child name="Hello World"/></root>"#;
-
-        let context = Context::new();
-        let reader = Reader::from_str(xml, &context).unwrap();
+        let reader = Reader::from_str(xml, None).unwrap();
         assert_eq!(
             reader.evaluate(".//child/@name").unwrap().string(),
             "Hello World".to_string()
@@ -209,9 +269,7 @@ mod tests {
     fn string_from_xml() {
         let xml = r#"<?xml version="1.0"?>
                      <root><title>Hello World</title><empty/></root>"#;
-
-        let context = Context::new();
-        let reader = Reader::from_str(xml, &context).unwrap();
+        let reader = Reader::from_str(xml, None).unwrap();
 
         let title = reader.relative("//title").unwrap();
         assert_eq!(String::from_xml(&title).unwrap(), "Hello World");
@@ -232,8 +290,7 @@ mod tests {
     #[test]
     fn num_from_xml() {
         let xml = r#"<?xml version="1.0"?><root><float>-23.85</float><int>42</int></root>"#;
-        let context = Context::new();
-        let reader = Reader::from_str(xml, &context).unwrap();
+        let reader = Reader::from_str(xml, None).unwrap();
 
         let float = reader.relative("//float").unwrap();
         let int = reader.relative("//int").unwrap();
@@ -257,8 +314,7 @@ mod tests {
     #[test]
     fn num_absent() {
         let xml = r#"<?xml version="1.0"?><root><float>-23.85</float><int>42</int></root>"#;
-        let context = Context::new();
-        let reader = Reader::from_str(xml, &context).unwrap();
+        let reader = Reader::from_str(xml, None).unwrap();
 
         let opt1: Option<f32> = reader.read("//float").unwrap();
         let opt2: Option<f32> = reader.read("//ffloat").unwrap();
@@ -270,8 +326,7 @@ mod tests {
     #[test]
     fn bool_from_xml() {
         let xml = r#"<?xml version="1.0"?><root><t>true</t><f>false</f></root>"#;
-        let context = Context::new();
-        let reader = Reader::from_str(xml, &context).unwrap();
+        let reader = Reader::from_str(xml, None).unwrap();
 
         let t = reader.relative("//t").unwrap();
         let f = reader.relative("//f").unwrap();
@@ -283,8 +338,7 @@ mod tests {
     #[test]
     fn vec_existent() {
         let xml = r#"<?xml version="1.0"?><book><tags><tag name="cyberpunk"/><tag name="sci-fi"/></tags></book>"#;
-        let context = Context::new();
-        let reader = Reader::from_str(xml, &context).unwrap();
+        let reader = Reader::from_str(xml, None).unwrap();
 
         let tags = reader.read::<Vec<String>>("//book/tags/tag/@name").unwrap();
         assert_eq!(tags, vec!["cyberpunk".to_string(), "sci-fi".to_string()]);
@@ -293,8 +347,7 @@ mod tests {
     #[test]
     fn vec_non_existent() {
         let xml = r#"<?xml version="1.0"?><root><t>true</t><f>false</f></root>"#;
-        let context = Context::new();
-        let reader = Reader::from_str(xml, &context).unwrap();
+        let reader = Reader::from_str(xml, None).unwrap();
 
         let tags = reader.read::<Vec<String>>("//book/tags/tag/@name").unwrap();
         assert_eq!(tags, Vec::<String>::new());

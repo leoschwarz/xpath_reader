@@ -25,7 +25,7 @@
 //! let mut context = Context::new();
 //! context.set_namespace("b", "books");
 //!
-//! let reader = Reader::from_str(xml, &context).unwrap();
+//! let reader = Reader::from_str(xml, Some(&context)).unwrap();
 //!
 //! let name: String = reader.read("//@name").unwrap();
 //! assert_eq!(name, "Neuromancer".to_string());
@@ -38,6 +38,8 @@
 //! let tags: Vec<String> = reader.read("//b:tags/b:tag/@name").unwrap();
 //! assert_eq!(tags, vec!["cyberpunk".to_string(), "sci-fi".to_string()]);
 //! ```
+
+#![warn(missing_docs)]
 
 extern crate sxd_document;
 extern crate sxd_xpath;
