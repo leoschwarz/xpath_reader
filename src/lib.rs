@@ -18,24 +18,24 @@
 //!
 //! # Examples
 //! ```
-//! use xpath_reader::{Context, XpathReader, XpathStrReader};
+//! use xpath_reader::{Context, Reader};
 //!
 //! let xml = r#"<?xml version="1.0"?><book xmlns="books" name="Neuromancer" author="William Gibson"><tags><tag name="cyberpunk"/><tag name="sci-fi"/></tags></book>"#;
 //!
 //! let mut context = Context::new();
 //! context.set_namespace("b", "books");
 //!
-//! let reader = XpathStrReader::new(xml, &context).unwrap();
+//! let reader = Reader::from_str(xml, &context).unwrap();
 //!
 //! let name: String = reader.read("//@name").unwrap();
 //! assert_eq!(name, "Neuromancer".to_string());
 //!
-//! let publisher: Option<String> = reader.read_option("//@publisher").unwrap();
-//! let author: Option<String> = reader.read_option("//@author").unwrap();
+//! let publisher: Option<String> = reader.read("//@publisher").unwrap();
+//! let author: Option<String> = reader.read("//@author").unwrap();
 //! assert_eq!(publisher, None);
 //! assert_eq!(author, Some("William Gibson".to_string()));
 //!
-//! let tags: Vec<String> = reader.read_vec("//b:tags/b:tag/@name").unwrap();
+//! let tags: Vec<String> = reader.read("//b:tags/b:tag/@name").unwrap();
 //! assert_eq!(tags, vec!["cyberpunk".to_string(), "sci-fi".to_string()]);
 //! ```
 
@@ -49,4 +49,4 @@ pub mod context;
 pub use self::context::Context;
 
 pub mod reader;
-pub use self::reader::{FromXml, XpathReader};
+pub use self::reader::{FromXml, Reader};

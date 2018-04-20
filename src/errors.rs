@@ -8,6 +8,8 @@ pub enum Error {
     /// Parsing a value failed, a value was present but invalid.
     ParseValue(Box<error::Error + Send + Sync>),
 
+    MissingAnchor,
+
     /// If a requested node was not found.
     NodeNotFound(String),
 
