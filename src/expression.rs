@@ -22,23 +22,27 @@ use std::borrow::Borrow;
 use sxd_xpath::{Factory, XPath};
 use util::Refable;
 
-/// An XPath expression that can be used for querying a document.
+/// An XPath expression that can be evaluated on documents.
+///
+/// `From` implementations exist so you can use this crate easily, by
+/// providing strings as XPath expressions directly. However for better
+/// performance in repeated evaluation of the same XPath expression, you
+/// should use the module level function `expression::parse` so it will
+/// be parsed exactly once.
 #[derive(Debug)]
 pub struct XPathExpression<'a>(Repr<'a>);
+
+/// Parse an expression in advance, this can be useful
+/// if you want to avoid an XPath expression being parsed
+/// on every invocation.
+pub fn parse(xpath_expr: &str) -> Result<XPathExpression<'static>, Error> {
+    parse_xpath(xpath_expr).map(|x| XPathExpression(Repr::Parsed(Refable::Owned(x))))
+}
 
 #[derive(Debug)]
 enum Repr<'a> {
     Parsed(Refable<'a, XPath>),
     Unparsed(&'a str),
-}
-
-impl XPathExpression<'static> {
-    /// Parse the expression in advance, this can be useful
-    /// if you want to avoid an XPath expression being parsed
-    /// on every invocation.
-    pub fn parse(xpath_expr: &str) -> Result<Self, Error> {
-        parse_xpath(xpath_expr).map(|x| XPathExpression(Repr::Parsed(Refable::Owned(x))))
-    }
 }
 
 impl<'a> XPathExpression<'a> {
