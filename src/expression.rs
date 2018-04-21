@@ -1,8 +1,28 @@
-use errors::{Error, XpathError};
+// Copyright 2018 Leonardo Schwarz <mail@leoschwarz.com>
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! XPath expression convenience typing.
+//!
+//! Provides a way to pass both pre-parsed and unparsed expressions
+//! as parameter to other methods.
+
+use errors::{Error, ErrorKind};
 use std::borrow::Borrow;
 use sxd_xpath::{Factory, XPath};
 use util::Refable;
 
+/// An XPath expression that can be used for querying a document.
 #[derive(Debug)]
 pub struct XPathExpression<'a>(Repr<'a>);
 
@@ -70,6 +90,6 @@ impl<'a> From<&'a XPathExpression<'a>> for XPathExpression<'a> {
 fn parse_xpath(xpath_expr: &str) -> Result<XPath, Error> {
     Factory::new()
         .build(xpath_expr)
-        .map_err(|e| Error::Xpath(e.into()))?
-        .ok_or(Error::Xpath(XpathError::Empty))
+        .map_err(|e| Error::internal(format!("{}", e), ErrorKind::ParseXPath))?
+        .ok_or_else(|| Error::internal("Empty XPath expression.", ErrorKind::ParseXPath))
 }

@@ -14,7 +14,7 @@
 
 //! XPath based document parsing.
 
-use errors::{Error, XpathError};
+use errors::{Error, ErrorKind};
 use expression::XPathExpression;
 use std::borrow::{Borrow, Cow};
 use sxd_document::Package;
@@ -46,9 +46,15 @@ enum Anchor<'d> {
 ///
 /// # Anchor nodeset
 ///
-/// A reader can be constructed with an anchor nodeset, or for convenience
-/// with a single node. Further queries on such a reader will be relative
-/// to the first element in document order of that nodeset.
+/// A reader can be constructed with or without an anchor nodeset.
+///
+/// Without an anchor nodeset relative XPath queries will resolve to the
+/// root node of the document, while with one relative XPath queries will
+/// resolve to the first element (in document order) of the anchor
+/// nodeset.
+///
+/// In addition `FromXml` implementors may combine multiple nodes into
+/// a single instance.
 pub struct Reader<'d> {
     context: Refable<'d, Context<'d>>,
     anchor: Anchor<'d>,
@@ -61,7 +67,7 @@ impl<'d> Reader<'d> {
         V: FromXml,
         X: Into<XPathExpression<'a>>,
     {
-        let reader = self.relative(xpath_expr)?;
+        let reader = self.with_nodeset_eval(xpath_expr)?;
         V::from_xml(&reader)
     }
 
@@ -70,7 +76,9 @@ impl<'d> Reader<'d> {
     /// A context can be specified to define custom functions,
     /// variables and namespaces.
     pub fn from_str(xml: &str, context: Option<&'d Context<'d>>) -> Result<Self, Error> {
-        let package = sxd_parse(xml).map_err(|e| Error::ParseXml(e.1[0]))?;
+        // TODO: Display all.
+        let package = sxd_parse(xml)
+            .map_err(|e| Error::internal(format!("{}", e.1[0]), ErrorKind::ParseXml))?;
 
         let context_refable = match context {
             Some(c) => Refable::Borrowed(c),
@@ -83,12 +91,18 @@ impl<'d> Reader<'d> {
         })
     }
 
-    pub fn from_node(node: Node<'d>, context: Option<&'d Context<'d>>) -> Self {
-        let mut nodeset = Nodeset::new();
-        nodeset.add(node);
-        Self::from_nodeset(nodeset, context)
-    }
-
+    /// Construct a new reader for the specified nodeset.
+    ///
+    /// Relative XPath expressions will then resolve to the first node
+    /// in the nodeset.
+    ///
+    /// The nodeset can be obtained from a `Reader<'d>` with the
+    /// `anchor_nodeset` and `anchor_node` methods.
+    /// A context can be specified to define custom functions,
+    /// variables and namespaces.
+    ///
+    /// Note: The nodeset can even be empty, which can be used by `FromXml`
+    /// implementors to cover the absence of a value in some cases.
     pub fn from_nodeset(nodeset: Nodeset<'d>, context: Option<&'d Context<'d>>) -> Self {
         let context_refable = match context {
             Some(c) => Refable::Borrowed(c),
@@ -101,22 +115,44 @@ impl<'d> Reader<'d> {
         }
     }
 
+    /// Convenience method over `from_nodeset` when there is only one `Node` for
+    /// the nodeset.
+    pub fn from_node(node: Node<'d>, context: Option<&'d Context<'d>>) -> Self {
+        let mut nodeset = Nodeset::new();
+        nodeset.add(node);
+        Self::from_nodeset(nodeset, context)
+    }
+
+    /// Creates a new `Reader` instance by evaluating an XPath expression and
+    /// using the result nodeset as anchor nodeset.
+    ///
+    /// The current context will be passed to the new reader.
+    pub fn with_nodeset_eval<'a, X>(&'d self, xpath_expr: X) -> Result<Self, Error>
+    where
+        X: Into<XPathExpression<'a>>,
+    {
+        let xpath = xpath_expr.into();
+        match self.evaluate(&xpath)? {
+            Value::Nodeset(nodeset) => Ok(Reader {
+                context: self.context.clone_ref(),
+                anchor: Anchor::Nodeset(nodeset),
+            }),
+            _ => Err(Error::internal(
+                format!(
+                    "XPath expression did not evaluate to nodeset: '{}'",
+                    xpath.to_string()
+                ),
+                ErrorKind::EvalXPath,
+            )),
+        }
+    }
+
+    /// References the evaluation context of this Reader.
     pub fn context(&'d self) -> &'d Context<'d> {
         self.context.borrow()
     }
 
-    /// Returns the anchor node of the current XML tree.
-    ///
-    /// If there are multiple nodes the first node in document order
-    /// will be returned.
-    pub fn anchor_node(&'d self) -> Option<Node<'d>> {
-        match self.anchor {
-            Anchor::Nodeset(ref nodeset) => nodeset.document_order_first(),
-            Anchor::Root(ref package) => Some(package.as_document().root().clone().into()),
-        }
-    }
-
-    /// Returns the anchor node set of the current reader.
+    /// Returns the anchor nodeset of the current reader.
     pub fn anchor_nodeset(&'d self) -> Cow<Nodeset<'d>> {
         match self.anchor {
             Anchor::Nodeset(ref nodeset) => Cow::Borrowed(nodeset),
@@ -129,24 +165,14 @@ impl<'d> Reader<'d> {
         }
     }
 
-    // TODO: Revise this method.
-    // Evaluates an XPath query, takes the first returned node (in document order) and creates
-    // a new `XpathNodeReader` with that node at its root.
-    pub fn relative<'a, X>(&'d self, xpath_expr: X) -> Result<Self, Error>
-    where
-        X: Into<XPathExpression<'a>>,
-    {
-        let xpath = xpath_expr.into();
-        let nodeset = match self.evaluate(&xpath)? {
-            Value::Nodeset(nodeset) => nodeset,
-            _ => {
-                return Err(Error::Xpath(XpathError::NotNodeset(xpath.to_string())));
-            }
-        };
-        Ok(Reader {
-            context: self.context.clone_ref(),
-            anchor: Anchor::Nodeset(nodeset),
-        })
+    /// Returns the first (in document order) node in the anchor nodeset.
+    ///
+    /// If the anchor nodeset is empty, `None` will be returned.
+    pub fn anchor_node(&'d self) -> Option<Node<'d>> {
+        match self.anchor {
+            Anchor::Nodeset(ref nodeset) => nodeset.document_order_first(),
+            Anchor::Root(ref package) => Some(package.as_document().root().clone().into()),
+        }
     }
 
     fn evaluate<'a, X>(&'d self, xpath_expr: X) -> Result<Value<'d>, Error>
@@ -156,14 +182,19 @@ impl<'d> Reader<'d> {
         let xpath_expr = xpath_expr.into();
         let xpath = xpath_expr.parsed()?;
         // TODO: Error message.
-        let anchor = self.anchor_node()
-            .ok_or_else(|| Error::NodeNotFound("".into()))?;
+        let anchor = self.anchor_node().ok_or_else(|| {
+            let xpath_ref: &XPath = xpath.borrow();
+            Error::internal(
+                format!("Anchor node not found when evaluating: {:?}", xpath_ref),
+                ErrorKind::EvalXPath,
+            )
+        })?;
 
         // Note: This is very ugly but otherwise does not compile.
         let xpath_ref: &XPath = xpath.borrow();
         xpath_ref
             .evaluate(self.context.borrow(), anchor)
-            .map_err(|e| Error::Xpath(e.into()))
+            .map_err(|e| Error::internal(format!("{}", e), ErrorKind::EvalXPath))
     }
 }
 
@@ -171,7 +202,7 @@ impl FromXml for String {
     fn from_xml<'d>(reader: &'d Reader<'d>) -> Result<Self, Error> {
         reader
             .anchor_node()
-            .ok_or(Error::MissingAnchor)
+            .ok_or(Error::custom_msg("Missing (anchor) node."))
             .map(|n| n.string_value())
     }
 }
@@ -213,7 +244,7 @@ macro_rules! from_parse_str {
                 fn from_xml<'d>(reader: &'d Reader<'d>) -> Result<Self, Error>
                 {
                     let s = String::from_xml(reader)?;
-                    s.parse::<$type>().map_err(|e| Error::ParseValue(Box::new(e)))
+                    s.parse::<$type>().map_err(|e| Error::custom_err(e))
                 }
             }
 
@@ -221,7 +252,7 @@ macro_rules! from_parse_str {
                 fn from_xml<'d>(reader: &'d Reader<'d>) -> Result<Self, Error>
                 {
                     if let Some(s) = Option::<String>::from_xml(reader)? {
-                        Ok(Some(s.parse::<$type>().map_err(|e| Error::ParseValue(Box::new(e)))?))
+                        Ok(Some(s.parse::<$type>().map_err(|e| Error::custom_err(e))?))
                     } else {
                         Ok(None)
                     }
@@ -254,18 +285,18 @@ mod tests {
                      <root><title>Hello World</title><empty/></root>"#;
         let reader = Reader::from_str(xml, None).unwrap();
 
-        let title = reader.relative("//title").unwrap();
+        let title = reader.with_nodeset_eval("//title").unwrap();
         assert_eq!(String::from_xml(&title).unwrap(), "Hello World");
         assert_eq!(
             Option::<String>::from_xml(&title).unwrap(),
             Some("Hello World".to_string())
         );
 
-        let empty = reader.relative("//empty").unwrap();
+        let empty = reader.with_nodeset_eval("//empty").unwrap();
         assert_eq!(String::from_xml(&empty).unwrap(), "");
         assert_eq!(Option::<String>::from_xml(&empty).unwrap(), None);
 
-        let inexistent = reader.relative("//inexistent").unwrap();
+        let inexistent = reader.with_nodeset_eval("//inexistent").unwrap();
         assert!(String::from_xml(&inexistent).is_err());
         assert_eq!(Option::<String>::from_xml(&inexistent).unwrap(), None);
     }
@@ -275,8 +306,8 @@ mod tests {
         let xml = r#"<?xml version="1.0"?><root><float>-23.85</float><int>42</int></root>"#;
         let reader = Reader::from_str(xml, None).unwrap();
 
-        let float = reader.relative("//float").unwrap();
-        let int = reader.relative("//int").unwrap();
+        let float = reader.with_nodeset_eval("//float").unwrap();
+        let int = reader.with_nodeset_eval("//int").unwrap();
 
         assert_eq!(f32::from_xml(&float).unwrap(), -23.85f32);
         assert_eq!(f32::from_xml(&int).unwrap(), 42f32);
@@ -311,8 +342,8 @@ mod tests {
         let xml = r#"<?xml version="1.0"?><root><t>true</t><f>false</f></root>"#;
         let reader = Reader::from_str(xml, None).unwrap();
 
-        let t = reader.relative("//t").unwrap();
-        let f = reader.relative("//f").unwrap();
+        let t = reader.with_nodeset_eval("//t").unwrap();
+        let f = reader.with_nodeset_eval("//f").unwrap();
 
         assert_eq!(bool::from_xml(&t).unwrap(), true);
         assert_eq!(bool::from_xml(&f).unwrap(), false);
