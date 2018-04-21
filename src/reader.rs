@@ -15,11 +15,13 @@
 //! XPath based document parsing.
 
 use errors::{Error, XpathError};
+use expression::XPathExpression;
 use std::borrow::{Borrow, Cow};
 use sxd_document::Package;
 use sxd_document::parser::parse as sxd_parse;
-use sxd_xpath::{Context, Factory, Value, XPath};
+use sxd_xpath::{Context, Value, XPath};
 use sxd_xpath::nodeset::{Node, Nodeset};
+use util::Refable;
 
 /// A value that can be deserialized from a XML reader.
 pub trait FromXml
@@ -40,45 +42,33 @@ enum Anchor<'d> {
     Root(Package),
 }
 
-// TODO: Is there a standard type for this in Rust, like Cow but without
-//       the clone requirement.
-enum Refable<'a, T: 'a> {
-    Owned(T),
-    Borrowed(&'a T),
-}
-
-impl<'a, T> Borrow<T> for Refable<'a, T> {
-    fn borrow(&self) -> &T {
-        match self {
-            &Refable::Owned(ref v) => &v,
-            &Refable::Borrowed(v) => v,
-        }
-    }
-}
-
-impl<'a, T> Refable<'a, T> {
-    fn clone_ref(&'a self) -> Self {
-        Refable::Borrowed(self.borrow())
-    }
-}
-
-/// Reads a XML tree using XPath queries.
+/// Reads a XML document using XPath queries.
 ///
-/// In the most basic case the XML tree equates a complete XML document,
-/// however using the `relative` and `from_node` methods it's also
-/// possible to create `Reader` instances relative to a specific anchor
-/// nodeset.
+/// # Anchor nodeset
+///
+/// A reader can be constructed with an anchor nodeset, or for convenience
+/// with a single node. Further queries on such a reader will be relative
+/// to the first element in document order of that nodeset.
 pub struct Reader<'d> {
     context: Refable<'d, Context<'d>>,
-    // TODO
-    factory: Factory,
     anchor: Anchor<'d>,
 }
 
 impl<'d> Reader<'d> {
+    /// Read the result of the XPath expression into a value of type `V`.
+    pub fn read<'a, V, X>(&'d self, xpath_expr: X) -> Result<V, Error>
+    where
+        V: FromXml,
+        X: Into<XPathExpression<'a>>,
+    {
+        let reader = self.relative(xpath_expr)?;
+        V::from_xml(&reader)
+    }
+
     /// Construct a new reader for the specified XML document.
     ///
-    /// A context can be specified to define functions, variables and namespaces.
+    /// A context can be specified to define custom functions,
+    /// variables and namespaces.
     pub fn from_str(xml: &str, context: Option<&'d Context<'d>>) -> Result<Self, Error> {
         let package = sxd_parse(xml).map_err(|e| Error::ParseXml(e.1[0]))?;
 
@@ -89,7 +79,6 @@ impl<'d> Reader<'d> {
 
         Ok(Reader {
             context: context_refable,
-            factory: Factory::default(),
             anchor: Anchor::Root(package),
         })
     }
@@ -97,7 +86,10 @@ impl<'d> Reader<'d> {
     pub fn from_node(node: Node<'d>, context: Option<&'d Context<'d>>) -> Self {
         let mut nodeset = Nodeset::new();
         nodeset.add(node);
+        Self::from_nodeset(nodeset, context)
+    }
 
+    pub fn from_nodeset(nodeset: Nodeset<'d>, context: Option<&'d Context<'d>>) -> Self {
         let context_refable = match context {
             Some(c) => Refable::Borrowed(c),
             None => Refable::Owned(Context::default()),
@@ -105,22 +97,12 @@ impl<'d> Reader<'d> {
 
         Reader {
             context: context_refable,
-            factory: Factory::default(),
             anchor: Anchor::Nodeset(nodeset),
         }
     }
 
     pub fn context(&'d self) -> &'d Context<'d> {
         self.context.borrow()
-    }
-
-    /// Read the result of the xpath expression into a value of type `V`.
-    pub fn read<V>(&'d self, xpath_expr: &str) -> Result<V, Error>
-    where
-        V: FromXml,
-    {
-        let reader = self.relative(xpath_expr)?;
-        V::from_xml(&reader)
     }
 
     /// Returns the anchor node of the current XML tree.
@@ -150,38 +132,39 @@ impl<'d> Reader<'d> {
     // TODO: Revise this method.
     // Evaluates an XPath query, takes the first returned node (in document order) and creates
     // a new `XpathNodeReader` with that node at its root.
-    pub fn relative(&'d self, xpath_expr: &str) -> Result<Self, Error> {
-        let nodeset = match self.evaluate(xpath_expr)? {
+    pub fn relative<'a, X>(&'d self, xpath_expr: X) -> Result<Self, Error>
+    where
+        X: Into<XPathExpression<'a>>,
+    {
+        let xpath = xpath_expr.into();
+        let nodeset = match self.evaluate(&xpath)? {
             Value::Nodeset(nodeset) => nodeset,
             _ => {
-                return Err(Error::Xpath(XpathError::NotNodeset(xpath_expr.into())));
+                return Err(Error::Xpath(XpathError::NotNodeset(xpath.to_string())));
             }
         };
         Ok(Reader {
             context: self.context.clone_ref(),
-            // TODO
-            factory: Factory::default(),
             anchor: Anchor::Nodeset(nodeset),
         })
     }
 
-    fn evaluate(&'d self, xpath_expr: &str) -> Result<Value<'d>, Error> {
-        let xpath = build_xpath(&self.factory, xpath_expr)?;
+    fn evaluate<'a, X>(&'d self, xpath_expr: X) -> Result<Value<'d>, Error>
+    where
+        X: Into<XPathExpression<'a>>,
+    {
+        let xpath_expr = xpath_expr.into();
+        let xpath = xpath_expr.parsed()?;
         // TODO: Error message.
         let anchor = self.anchor_node()
             .ok_or_else(|| Error::NodeNotFound("".into()))?;
 
-        xpath
+        // Note: This is very ugly but otherwise does not compile.
+        let xpath_ref: &XPath = xpath.borrow();
+        xpath_ref
             .evaluate(self.context.borrow(), anchor)
             .map_err(|e| Error::Xpath(e.into()))
     }
-}
-
-fn build_xpath(factory: &Factory, xpath_expr: &str) -> Result<XPath, Error> {
-    factory
-        .build(xpath_expr)
-        .map_err(|e| Error::Xpath(e.into()))?
-        .ok_or(Error::Xpath(XpathError::Empty))
 }
 
 impl FromXml for String {
@@ -340,7 +323,7 @@ mod tests {
         let xml = r#"<?xml version="1.0"?><book><tags><tag name="cyberpunk"/><tag name="sci-fi"/></tags></book>"#;
         let reader = Reader::from_str(xml, None).unwrap();
 
-        let tags = reader.read::<Vec<String>>("//book/tags/tag/@name").unwrap();
+        let tags: Vec<String> = reader.read("//book/tags/tag/@name").unwrap();
         assert_eq!(tags, vec!["cyberpunk".to_string(), "sci-fi".to_string()]);
     }
 
@@ -349,7 +332,7 @@ mod tests {
         let xml = r#"<?xml version="1.0"?><root><t>true</t><f>false</f></root>"#;
         let reader = Reader::from_str(xml, None).unwrap();
 
-        let tags = reader.read::<Vec<String>>("//book/tags/tag/@name").unwrap();
+        let tags: Vec<String> = reader.read("//book/tags/tag/@name").unwrap();
         assert_eq!(tags, Vec::<String>::new());
     }
 }

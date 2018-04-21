@@ -45,9 +45,9 @@ extern crate sxd_document;
 extern crate sxd_xpath;
 
 mod errors;
-pub use self::errors::Error;
-
-pub use sxd_xpath::Context;
-
+mod util;
+pub mod expression;
 pub mod reader;
+pub use self::errors::Error;
 pub use self::reader::{FromXml, Reader};
+pub use sxd_xpath::Context;
