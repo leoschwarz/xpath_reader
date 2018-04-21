@@ -12,14 +12,16 @@ enum Repr<'a> {
     Unparsed(&'a str),
 }
 
-impl<'a> XPathExpression<'a> {
+impl XPathExpression<'static> {
     /// Parse the expression in advance, this can be useful
     /// if you want to avoid an XPath expression being parsed
     /// on every invocation.
     pub fn parse(xpath_expr: &str) -> Result<Self, Error> {
         parse_xpath(xpath_expr).map(|x| XPathExpression(Repr::Parsed(Refable::Owned(x))))
     }
+}
 
+impl<'a> XPathExpression<'a> {
     pub(crate) fn parsed(&self) -> Result<Refable<XPath>, Error> {
         match self.0 {
             Repr::Parsed(ref refable) => Ok(refable.clone_ref()),
