@@ -1,9 +1,8 @@
 //! Error definitions.
 
-// TODO: impl fmt::Display, error::Error for all error types.
-
 use std::{error, fmt};
 
+/// The error type used throughout the crate.
 #[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
@@ -46,6 +45,11 @@ impl Error {
         }
     }
 
+    /// Returns the error kind of this error.
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+
     pub fn custom_msg<S: Into<String>>(s: S) -> Self {
         let data = CustomError::Message(s.into());
         Error {
@@ -63,32 +67,21 @@ impl Error {
     }
 }
 
-/*
-
-/// Any error that can occur when reading values from XML.
-#[derive(Debug)]
-pub enum Error {
-    /// There was an error parsing the XML document.
-    ParseXml(::sxd_document::parser::Error),
-
-    /// An error due to XPath expression parsing or evaluation.
-    XPath(String),
-
-
-    /// One or more required nodes are missing, may optionally include
-    /// a description of the missing nodes.
-    MissingNodes(Option<String>),
-
-    Message(String),
-    Other(Box<error::Error + Send + Sync>)
-}
-
-impl<T> From<T> for Error
-where
-    T: Into<::sxd_xpath::Error>,
-{
-    fn from(t: T) -> Self {
-        Error::XPath(format!("{}", t.into()))
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "xpath_reader error: kind = {:?}, message = ", self.kind)?;
+        match self.data {
+            ErrorData::Internal(ref e) => write!(f, "{}, source = internal", e),
+            ErrorData::Custom(CustomError::Message(ref s)) => {
+                write!(f, "{}, source = custom msg", s)
+            }
+            ErrorData::Custom(CustomError::Error(ref e)) => write!(f, "{}, source = custom_err", e),
+        }
     }
 }
-*/
+
+impl error::Error for Error {
+    fn description(&self) -> &str {
+        "xpath_reader error"
+    }
+}

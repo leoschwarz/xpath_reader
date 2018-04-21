@@ -48,6 +48,6 @@ mod errors;
 mod util;
 pub mod expression;
 pub mod reader;
-pub use self::errors::Error;
+pub use self::errors::{Error, ErrorKind};
 pub use self::reader::{FromXml, Reader};
 pub use sxd_xpath::Context;
