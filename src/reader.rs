@@ -23,6 +23,9 @@ use sxd_xpath::{Context, Value, XPath};
 use sxd_xpath::nodeset::{Node, Nodeset};
 use util::Refable;
 
+/// Convenience redefinition of the FromXml result type.
+pub type FromXmlResult<T> = Result<T, Error>;
+
 /// A value that can be deserialized from a XML reader.
 pub trait FromXml
 where
@@ -34,7 +37,7 @@ where
     /// defined. However for `Option<T>` a best effort approach should
     /// be followed, returning `Ok(None)` in absence of a value instead of
     /// an error.
-    fn from_xml<'d>(reader: &'d Reader<'d>) -> Result<Self, Error>;
+    fn from_xml<'d>(reader: &'d Reader<'d>) -> FromXmlResult<Self>;
 }
 
 enum Anchor<'d> {
