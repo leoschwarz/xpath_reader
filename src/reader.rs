@@ -42,19 +42,19 @@ enum Anchor<'d> {
     Root(Package),
 }
 
-/// Reads a XML document using XPath queries.
+/// XML element tree reader using XPath expressions.
 ///
 /// # Anchor nodeset
 ///
-/// A reader can be constructed with or without an anchor nodeset.
+/// An instance of `Reader` either contains a complete document, or
+/// references an anchor nodeset (a "relative" reader).
+/// There are two aspects for which this distinction is relevant:
 ///
-/// Without an anchor nodeset relative XPath queries will resolve to the
-/// root node of the document, while with one relative XPath queries will
-/// resolve to the first element (in document order) of the anchor
-/// nodeset.
-///
-/// In addition `FromXml` implementors may combine multiple nodes into
-/// a single instance.
+/// 1) Relative expressions: If there is an anchor nodeset, relative
+///    XPath expressions will be evaluated relative to the first
+///    node in the nodeset, in document order.
+/// 2) `FromXml` implementors can query the anchor nodeset to convert
+///    multiple nodes into a single target value.
 pub struct Reader<'d> {
     context: Refable<'d, Context<'d>>,
     anchor: Anchor<'d>,

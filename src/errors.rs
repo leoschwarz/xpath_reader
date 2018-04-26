@@ -9,12 +9,17 @@ pub struct Error {
     data: ErrorData,
 }
 
+/// Describes the kind of the error.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ErrorKind {
+    /// There was an error parsing the XML document.
     ParseXml,
+    /// There was an error parsing the XPath expression.
     ParseXPath,
+    /// There was an error evaluation the XPath expression.
     EvalXPath,
-    Custom,
+    /// There was an other error.
+    Other,
 }
 
 pub(crate) trait InternalError: fmt::Display + fmt::Debug + Send + Sync {}
@@ -50,18 +55,20 @@ impl Error {
         self.kind
     }
 
+    /// Create a new custom error by providing an error message.
     pub fn custom_msg<S: Into<String>>(s: S) -> Self {
         let data = CustomError::Message(s.into());
         Error {
-            kind: ErrorKind::Custom,
+            kind: ErrorKind::Other,
             data: ErrorData::Custom(data),
         }
     }
 
+    /// Create a new custom error by providing an error object.
     pub fn custom_err<E: 'static + error::Error + Send + Sync>(e: E) -> Self {
         let data = CustomError::Error(Box::new(e));
         Error {
-            kind: ErrorKind::Custom,
+            kind: ErrorKind::Other,
             data: ErrorData::Custom(data),
         }
     }
