@@ -49,6 +49,6 @@ mod util;
 pub mod expression;
 pub mod reader;
 pub use self::errors::{Error, ErrorKind};
-pub use self::reader::{FromXml, FromXmlResult, Reader};
+pub use self::reader::{FromXml, FromXmlOptional, FromXmlResult, Reader};
 // TODO: Replace the documentation of Context with an example for xpath_reader.
 pub use sxd_xpath::Context;
