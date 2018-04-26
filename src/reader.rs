@@ -40,6 +40,44 @@ where
     fn from_xml<'d>(reader: &'d Reader<'d>) -> FromXmlResult<Self>;
 }
 
+/// A helper trait to define two `FromXml` implementations at once.
+///
+/// In general you want to implement `FromXml` directly, however
+/// sometimes you want to implement it for `T` and `Option<T>`.
+/// In this case you can implement `FromXmlOptional` for `T` and
+/// `FromXml` will be implemented for both types where `FromXml`
+/// for `T` will fail if the your implementation returns None.
+pub trait FromXmlOptional
+where
+    Self: Sized,
+{
+    /// `FromXml::from_xml` impl for `Option<T>`.
+    fn from_xml_optional<'d>(reader: &'d Reader<'d>) -> FromXmlResult<Option<Self>>;
+}
+
+impl<T> FromXml for T
+where
+    T: FromXmlOptional,
+{
+    fn from_xml<'d>(reader: &'d Reader<'d>) -> FromXmlResult<Self> {
+        // TODO: Better error message.
+        T::from_xml_optional(reader).and_then(|opt| {
+            opt.ok_or_else(|| {
+                Error::custom_msg(format!("Missing value for type {:?}", stringify!(T)))
+            })
+        })
+    }
+}
+
+impl<T> FromXml for Option<T>
+where
+    T: FromXmlOptional,
+{
+    fn from_xml<'d>(reader: &'d Reader<'d>) -> FromXmlResult<Self> {
+        T::from_xml_optional(reader)
+    }
+}
+
 enum Anchor<'d> {
     Nodeset(Nodeset<'d>),
     Root(Package),
