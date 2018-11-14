@@ -119,7 +119,7 @@ impl<'d> Reader<'d> {
     pub fn from_str(xml: &str, context: Option<&'d Context<'d>>) -> Result<Self, Error> {
         // TODO: Display all.
         let package = sxd_parse(xml)
-            .map_err(|e| Error::internal(format!("{}", e.1[0]), ErrorKind::ParseXml))?;
+            .map_err(|e| Error::internal(format!("{}", e), ErrorKind::ParseXml))?;
 
         let context_refable = match context {
             Some(c) => Refable::Borrowed(c),

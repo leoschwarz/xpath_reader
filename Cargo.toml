@@ -13,6 +13,6 @@ readme = "README.md"
 default = []
 
 [dependencies]
-sxd-document = "0.2"
+sxd-document = "0.3"
 sxd-xpath = "0.4"
 
