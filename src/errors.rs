@@ -24,11 +24,7 @@ pub enum ErrorKind {
 
 pub(crate) trait InternalError: fmt::Display + fmt::Debug + Send + Sync {}
 
-impl<T> InternalError for T
-where
-    T: fmt::Display + fmt::Debug + Send + Sync,
-{
-}
+impl<T> InternalError for T where T: fmt::Display + fmt::Debug + Send + Sync {}
 
 #[derive(Debug)]
 enum ErrorData {
@@ -40,6 +36,7 @@ enum ErrorData {
 pub enum CustomError {
     Message(String),
     Error(Box<error::Error + Send + Sync>),
+    ErrorWithMessage(Box<error::Error + Send + Sync>, String),
 }
 
 impl Error {
@@ -72,6 +69,17 @@ impl Error {
             data: ErrorData::Custom(data),
         }
     }
+
+    /// Create a new custom error by providing an error object and an additional message.
+    pub fn custom_err_msg<E: 'static + error::Error + Send + Sync, S: Into<String>>(
+        e: E,
+        s: S,
+    ) -> Self {
+        Error {
+            kind: ErrorKind::Other,
+            data: ErrorData::Custom(CustomError::ErrorWithMessage(Box::new(e), s.into())),
+        }
+    }
 }
 
 impl fmt::Display for Error {
@@ -83,6 +91,9 @@ impl fmt::Display for Error {
                 write!(f, "{}, source = custom msg", s)
             }
             ErrorData::Custom(CustomError::Error(ref e)) => write!(f, "{}, source = custom_err", e),
+            ErrorData::Custom(CustomError::ErrorWithMessage(ref e, ref s)) => {
+                write!(f, "{}, source = custom_err({})", e, s)
+            }
         }
     }
 }

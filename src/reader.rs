@@ -17,10 +17,10 @@
 use errors::{Error, ErrorKind};
 use expression::XPathExpression;
 use std::borrow::{Borrow, Cow};
-use sxd_document::Package;
 use sxd_document::parser::parse as sxd_parse;
-use sxd_xpath::{Context, Value, XPath};
+use sxd_document::Package;
 use sxd_xpath::nodeset::{Node, Nodeset};
+use sxd_xpath::{Context, Value, XPath};
 use util::Refable;
 
 /// Convenience redefinition of the FromXml result type.
@@ -118,8 +118,8 @@ impl<'d> Reader<'d> {
     /// variables and namespaces.
     pub fn from_str(xml: &str, context: Option<&'d Context<'d>>) -> Result<Self, Error> {
         // TODO: Display all.
-        let package = sxd_parse(xml)
-            .map_err(|e| Error::internal(format!("{}", e), ErrorKind::ParseXml))?;
+        let package =
+            sxd_parse(xml).map_err(|e| Error::internal(format!("{}", e), ErrorKind::ParseXml))?;
 
         let context_refable = match context {
             Some(c) => Refable::Borrowed(c),

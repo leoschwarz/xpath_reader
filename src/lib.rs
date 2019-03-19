@@ -45,9 +45,9 @@ extern crate sxd_document;
 extern crate sxd_xpath;
 
 mod errors;
-mod util;
 pub mod expression;
 pub mod reader;
+mod util;
 pub use self::errors::{Error, ErrorKind};
 pub use self::reader::{FromXml, FromXmlOptional, FromXmlResult, Reader};
 // TODO: Replace the documentation of Context with an example for xpath_reader.
