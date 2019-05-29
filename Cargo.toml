@@ -1,6 +1,6 @@
 [package]
 name = "xpath_reader"
-version = "0.5.2"
+version = "0.5.3"
 authors = ["Leo Schwarz <mail@leoschwarz.com>"]
 license = "Apache-2.0"
 description = "Provides a convenient API to read from XML using XPath expressions."

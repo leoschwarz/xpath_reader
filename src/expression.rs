@@ -1,4 +1,4 @@
-// Copyright 2018 Leonardo Schwarz <mail@leoschwarz.com>
+// Copyright 2018-2019 Leonardo Schwarz <mail@leoschwarz.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 //! as parameter to other methods.
 
 use errors::{Error, ErrorKind};
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use sxd_xpath::{Factory, XPath};
 use util::Refable;
 
@@ -42,7 +42,7 @@ pub fn parse(xpath_expr: &str) -> Result<XPathExpression<'static>, Error> {
 #[derive(Debug)]
 enum Repr<'a> {
     Parsed(Refable<'a, XPath>),
-    Unparsed(&'a str),
+    Unparsed(Cow<'a, str>),
 }
 
 impl<'a> XPathExpression<'a> {
@@ -78,7 +78,13 @@ impl<'a> From<&'a XPath> for XPathExpression<'a> {
 
 impl<'a> From<&'a str> for XPathExpression<'a> {
     fn from(s: &'a str) -> Self {
-        XPathExpression(Repr::Unparsed(s))
+        XPathExpression(Repr::Unparsed(Cow::Borrowed(s)))
+    }
+}
+
+impl<'a> From<String> for XPathExpression<'a> {
+    fn from(s: String) -> Self {
+        XPathExpression(Repr::Unparsed(Cow::Owned(s)))
     }
 }
 
@@ -86,7 +92,7 @@ impl<'a> From<&'a XPathExpression<'a>> for XPathExpression<'a> {
     fn from(x: &'a XPathExpression<'a>) -> Self {
         match x.0 {
             Repr::Parsed(ref refable) => XPathExpression(Repr::Parsed(refable.clone_ref())),
-            Repr::Unparsed(ref s) => XPathExpression(Repr::Unparsed(s)),
+            Repr::Unparsed(ref s) => XPathExpression(Repr::Unparsed(s.clone())),
         }
     }
 }
